@@ -99,3 +99,14 @@ The project owner authorized implementation and chose to leave the game unnamed.
 ### Public development
 
 The project will be developed at [mdlvr1w/creation-game](https://github.com/mdlvr1w/creation-game) under the MIT License. The repository slug is a working identifier while the game remains unnamed. Publish code, build instructions, and current design decisions together. Keep GitHub current as development proceeds.
+
+### First playtest and articulated construction
+
+The project owner built a basic stick figure with little effort. Placing and connecting points felt intuitive. Manipulating the figure revealed four opportunities that apply to characters, mechanisms, and environments alike.
+
+- **Rotation precision.** Preserve free swinging and explore optional angle increments and exact angle entry. The reference direction and the parts affected by the rotation should be visible.
+- **Symmetry.** Explore a creator-defined centerline or plane that can mirror placement and connections. Mirroring during creation and keeping both sides synchronized over time are distinct ideas. Symmetry should apply to any suitable structure.
+- **Transform hierarchy.** Explore explicit parent–child relationships so a creator can carry the forearm and hand when moving the upper arm. Transform relationships should be independently configurable alongside organizational, physical, and behavioral relationships. A visible link alone should not imply parenting or a physical joint.
+- **Placement precision.** Preserve free placement and explore optional grid snapping, horizontal and vertical alignment guides relative to existing points, and temporary snapping through a modifier. Guides should make the active alignment clear.
+
+The proposed next focus is making articulated construction natural, precise, and enjoyable before exploring locomotion. These observations guide the next design discussion. The controls, precedence between snap targets, and order of implementation are open.
