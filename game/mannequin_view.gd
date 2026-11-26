@@ -2,13 +2,15 @@ extends Node3D
 
 const Mannequin := preload("res://game/mannequin.gd")
 const LimbControls := preload("res://game/limb_controls.gd")
-const PROPORTIONS_FILE := "user://mannequin-proportions.json"
+const PROPORTIONS_FILE := Mannequin.LOCAL_PROPORTIONS
+const Stage := preload("res://game/mannequin_stage.gd")
 const VIEW_NAMES := ["Front", "Three-quarter", "Side"]
 const VIEW_ANGLES := [0.0, 35.0, 90.0]
 
 var figurine := Mannequin.new()
 var limb_controls := LimbControls.new()
-var stage := MeshInstance3D.new()
+var stage := Stage.new()
+var load_starting_proportions := true
 var status := Label.new()
 var highlight := StandardMaterial3D.new()
 var selected_limb: StringName = &""
@@ -19,7 +21,7 @@ var view_buttons: Array[Button] = []
 
 
 func _ready() -> void:
-	add_stage()
+	add_child(stage)
 	add_child(figurine)
 	highlight = figurine.material.duplicate()
 	highlight.albedo_color = Color("#c2f1e7")
@@ -28,46 +30,18 @@ func _ready() -> void:
 	add_child(camera)
 	camera.make_current()
 	add_controls()
-	load_proportions()
+	if load_starting_proportions:
+		figurine.decode_proportions(FileAccess.get_file_as_string(Mannequin.WORKING_PROPORTIONS))
+		load_proportions()
+		var tree := get_tree()
+		if tree.has_meta("preview_proportions"):
+			figurine.decode_proportions(tree.get_meta("preview_proportions"))
+			tree.remove_meta("preview_proportions")
 	set_view(1)
 	get_viewport().size_changed.connect(func():
 		frame_figurine()
 		position_limb_controls()
 	)
-
-
-func add_stage() -> void:
-	var world := WorldEnvironment.new()
-	world.environment = Environment.new()
-	world.environment.background_mode = Environment.BG_COLOR
-	world.environment.background_color = Color("#283338")
-	world.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	world.environment.ambient_light_color = Color("#e2eaf0")
-	world.environment.ambient_light_energy = 0.26
-	add_child(world)
-
-	var mesh := PlaneMesh.new()
-	mesh.size = Vector2(300.0, 300.0)
-	stage.mesh = mesh
-	var surface := StandardMaterial3D.new()
-	surface.albedo_color = Color("#404b51")
-	surface.roughness = 1.0
-	stage.material_override = surface
-	stage.position.y = -0.003
-	add_child(stage)
-
-	add_light(Vector3(-48, -32, 0), Color("#fff3e4"), 0.22, true)
-	add_light(Vector3(-26, 145, 0), Color("#d9ebff"), 0.12, false)
-
-
-func add_light(angle: Vector3, color: Color, energy: float, casts_shadow: bool) -> void:
-	var light := DirectionalLight3D.new()
-	light.rotation_degrees = angle
-	light.light_color = color
-	light.light_energy = energy
-	light.shadow_enabled = casts_shadow
-	light.directional_shadow_max_distance = 12.0
-	add_child(light)
 
 
 func add_controls() -> void:
@@ -98,6 +72,17 @@ func add_controls() -> void:
 	save.custom_minimum_size.y = 32
 	save.pressed.connect(func(): save_proportions())
 	toolbar.add_child(save)
+
+	var play := Button.new()
+	play.text = "Try movement"
+	play.custom_minimum_size.y = 32
+	play.pressed.connect(func():
+		var tree := get_tree()
+		tree.set_meta("preview_proportions", figurine.encode_proportions())
+		if tree.change_scene_to_file("res://game/movement_preview.tscn") != OK:
+			tree.remove_meta("preview_proportions")
+	)
+	toolbar.add_child(play)
 
 	status.position = Vector2(20, 58)
 	status.text = "Click a part of the mannequin to adjust its proportions."
@@ -252,7 +237,7 @@ func set_view(index: int) -> void:
 
 
 func frame_figurine() -> void:
-	stage.position.y = figurine.floor_height - 0.003
+	stage.floor_mesh.position.y = figurine.floor_height - 0.003
 	var bottom := minf(0.0, figurine.floor_height)
 	var top_change := maxf(0.0, figurine.head.position.y + figurine.head.scale.y * 0.5 - 2.64)
 	var target := Vector3(0.0, 1.31 + (bottom + top_change) * 0.5, 0.0)

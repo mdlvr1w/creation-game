@@ -2,6 +2,8 @@ extends Node3D
 ## The starter figurine's visual geometry in a neutral pose.
 ## Local +Z is the front. Limb lengths are measured between joint centers.
 
+const WORKING_PROPORTIONS := "res://game/default_proportions.json"
+const LOCAL_PROPORTIONS := "user://mannequin-proportions.json"
 const MIN_FACTOR := 0.55
 const MAX_FACTOR := 1.65
 const MAX_OFFSET := 0.35

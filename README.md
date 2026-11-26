@@ -15,6 +15,12 @@ Click the head, neck, torso, or any arm or leg segment to adjust it. The control
 
 **Save proportions** writes all eleven parts to `user://mannequin-proportions.json` and replaces the previous local preset. The viewer loads it automatically on launch and accepts earlier limb-only and torso presets. Previously saved side-to-side differences are kept until you adjust those controls. The preset lives outside the repository.
 
+## Try movement
+
+Choose **Try movement** in the figurine viewer. Move with **A/D** or **←/→**, and press **Space** to jump. Try the low block, then adjust **Move speed** or **Jump strength** and try it again. These controls apply for the current preview session. **Back to proportions** returns to the proportions you were viewing, even if you had yet to save them.
+
+The viewer starts from the project preset in `game/default_proportions.json`. A local saved preset takes precedence. Movement uses the displayed proportions and blends the limbs according to horizontal speed and whether the character is on the ground.
+
 ## Try the point editor
 
 Choose **Point editor** in the viewer to open the earlier construction prototype.
@@ -28,7 +34,7 @@ Choose **Point editor** in the viewer to open the earlier construction prototype
 
 ## Build and test
 
-Install Godot **4.5.1 stable** and its matching export templates. Run `GODOT_BIN=/path/to/godot ./scripts/build.sh` from Linux. The script imports the project, runs the headless figure, workspace, and mannequin tests, and exports both builds to `dist/`.
+Install Godot **4.5.1 stable** and its matching export templates. Run `GODOT_BIN=/path/to/godot ./scripts/build.sh` from Linux. The script imports the project, runs the headless figure, workspace, mannequin, and movement tests, and exports both builds to `dist/`.
 
 `game/figure.gd` owns the saved points and connections. `game/workspace.gd` handles the in-game tools and draws the figure in a 3D viewport. The first workspace uses an orthographic camera, constrains new points to a plane, and uses Godot's Compatibility renderer. The saved format includes depth so the planar input tool need not define the format for later tools.
 

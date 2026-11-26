@@ -166,3 +166,9 @@ The saved preset now includes torso dimensions and height offsets. Earlier prese
 The head and neck now have size, height, and thickness controls. Head changes preserve its neck attachment, and neck changes carry the head. The proportion panel sits to the right of the figure. The viewer adjusts the framing when large proportions would otherwise reach the panel.
 
 New saves include all eleven parts. The earlier preset versions load with the original head and neck dimensions.
+
+### Working proportions and first movement test
+
+The creator's saved proportions are now the working default. Compared with the original dimensions, forearms are 20 percent longer, the neck is 20 percent thinner, and the torso is 21 percent taller. The proportion viewer remains an in-game editor for the current humanoid. The same visual model is used for the first movement test.
+
+The movement preview adds side-on walking, stopping, and jumping on a floor with one low obstacle. It uses an independent controller and collision shape. The procedural stride and air pose blend in response to velocity and floor contact. Preview sliders expose speed and jump strength for immediate feedback. Movement parameters are session-local at this stage.

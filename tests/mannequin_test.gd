@@ -11,6 +11,7 @@ func _initialize() -> void:
 
 func run() -> void:
 	var viewer = Viewer.instantiate()
+	viewer.load_starting_proportions = false
 	root.add_child(viewer)
 	await physics_frame
 	await physics_frame

@@ -1,0 +1,71 @@
+{
+	"head": {
+		"height_offset": 0.0,
+		"length": 1.0,
+		"size": 1.0,
+		"thickness": 1.0
+	},
+	"limbs": {
+		"LeftLowerArm": {
+			"height_offset": 0.0,
+			"length": 1.2,
+			"size": 1.0,
+			"thickness": 1.0
+		},
+		"LeftLowerLeg": {
+			"height_offset": 0.0,
+			"length": 1.0,
+			"size": 1.0,
+			"thickness": 1.0
+		},
+		"LeftUpperArm": {
+			"height_offset": 0.0,
+			"length": 1.0,
+			"size": 1.0,
+			"thickness": 1.0
+		},
+		"LeftUpperLeg": {
+			"height_offset": 0.0,
+			"length": 1.0,
+			"size": 1.0,
+			"thickness": 1.0
+		},
+		"RightLowerArm": {
+			"height_offset": 0.0,
+			"length": 1.2,
+			"size": 1.0,
+			"thickness": 1.0
+		},
+		"RightLowerLeg": {
+			"height_offset": 0.0,
+			"length": 1.0,
+			"size": 1.0,
+			"thickness": 1.0
+		},
+		"RightUpperArm": {
+			"height_offset": 0.0,
+			"length": 1.0,
+			"size": 1.0,
+			"thickness": 1.0
+		},
+		"RightUpperLeg": {
+			"height_offset": 0.0,
+			"length": 1.0,
+			"size": 1.0,
+			"thickness": 1.0
+		}
+	},
+	"neck": {
+		"height_offset": 0.0,
+		"length": 1.0,
+		"size": 1.0,
+		"thickness": 0.8
+	},
+	"torso": {
+		"height_offset": 0.0,
+		"length": 1.21,
+		"size": 1.0,
+		"thickness": 1.0
+	},
+	"version": 3
+}
