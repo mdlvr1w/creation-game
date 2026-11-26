@@ -79,6 +79,7 @@ func build_interface() -> void:
 	add_button(toolbar, "Open…", request_open)
 	add_button(toolbar, "Save", request_save)
 	add_button(toolbar, "Save as…", show_save_dialog)
+	add_button(toolbar, "Figurine", request_figurine)
 	get_viewport().size_changed.connect(redraw)
 
 	status.position = Vector2(20, 58)
@@ -430,12 +431,26 @@ func draw_triangle(mesh: ImmediateMesh, first: Vector3, second: Vector3, third: 
 
 
 func request_open() -> void:
+	confirm_unsaved_changes(
+		"Open another figure? Unsaved changes will be lost if it loads successfully.",
+		func(): open_dialog.popup_centered_ratio(0.7)
+	)
+
+
+func request_figurine() -> void:
+	confirm_unsaved_changes(
+		"Return to the figurine? Unsaved changes to this figure will be lost.",
+		func(): get_tree().change_scene_to_file("res://game/mannequin_view.tscn")
+	)
+
+
+func confirm_unsaved_changes(message: String, action: Callable) -> void:
 	if figure.encode() == saved_figure:
-		open_dialog.popup_centered_ratio(0.7)
+		action.call()
 		return
 	var confirmation := ConfirmationDialog.new()
-	confirmation.dialog_text = "Open another figure? Unsaved changes will be lost if it loads successfully."
-	confirmation.confirmed.connect(func(): open_dialog.popup_centered_ratio(0.7))
+	confirmation.dialog_text = message
+	confirmation.confirmed.connect(action)
 	confirmation.visibility_changed.connect(func():
 		if not confirmation.visible:
 			confirmation.queue_free()

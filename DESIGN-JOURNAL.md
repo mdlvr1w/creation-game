@@ -142,3 +142,9 @@ Playtest feedback showed that the workspace mirror toggle and fixed centerline w
 The point editor playtest made construction approachable, but the activity felt like rigging. Start the next development phase with one original cartoon mannequin, then tune its movement and animation before broadening the sandbox tools. Keep the point editor available as an experiment for potential advanced tools. The character engine, player–developer parity, and inspectable components remain long-term goals.
 
 Aim for the broad proportions discussed using Sackboy and Restitched as references. The original figurine should have an oversized head, a compact body, and short limbs. The first appearance pass should be simple enough to revise quickly and expressive enough to judge in the side view at gameplay scale. Materials, facial details, and exact proportions remain open.
+
+### First mannequin appearance pass
+
+The starter figurine has a spherical head, simple neck, one rounded torso, and two segments per arm and leg. It uses a plain white material and has a neutral pose. The earlier point editor remains reachable from the viewer. Front, three-quarter, and side views make it easy to compare the silhouette while the proportions are still open to revision.
+
+Once the appearance is established, the next focus is movement feel and in-game tuning. Explore driving animation transitions from measured movement and physical state. Authored poses and clips can provide the performance, with procedural adjustments added where they help the motion respond. Add anatomy when a specific interaction calls for it.

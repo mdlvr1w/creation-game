@@ -1,15 +1,19 @@
 # Creation game
 
-This repository records the vision and design discussions for an open-source creation game. The project is in its first playable prototype. The game is still unnamed.
+This repository records the vision and design discussions for an open-source creation game. The project starts with a viewer for the starter figurine and includes an earlier point-editor prototype. The game is still unnamed.
 
 - [Game vision](VISION.md) records the goals and design principles established so far.
 - [Design journal](DESIGN-JOURNAL.md) records discussion topics, illustrative ideas, and decisions still open.
 
 When a discussion reaches an important conclusion, update the relevant section of the vision and add a dated journal entry with the decision and its rationale. Keep examples and unresolved ideas in the journal. When a decision changes, update the vision and record what changed. Use Git history to track revisions.
 
-## Try the first prototype
+## Try the figurine
 
-After building, run `dist/linux/workspace.x86_64` on Linux or `dist/windows/workspace.exe` on Windows. Both builds target x86-64 and include the runtime.
+After building, run `dist/linux/workspace.x86_64` on Linux or `dist/windows/workspace.exe` on Windows. Both builds target x86-64 and include the runtime. Use **Front**, **Three-quarter**, and **Side** to inspect the white mannequin in its neutral pose.
+
+## Try the point editor
+
+Choose **Point editor** in the viewer to open the earlier construction prototype.
 
 1. In **Place & move**, click empty space to add points and drag existing points to reshape the figure.
 2. In **Connect**, click two points to join them. Repeat for each link.
