@@ -2,12 +2,23 @@ extends Node3D
 
 const Mannequin := preload("res://game/mannequin.gd")
 const Controller := preload("res://game/mannequin_controller.gd")
+const Settings := preload("res://game/movement_settings.gd")
+const TUNING_LABELS := {
+	&"min_speed": "Min walk speed",
+	&"max_speed": "Max walk speed",
+	&"min_jump": "Tap jump strength",
+	&"max_jump": "Hold jump strength",
+	&"lean_degrees": "Forward lean (°)",
+}
 const Stage := preload("res://game/mannequin_stage.gd")
 
 var player := Controller.new()
 var camera := Camera3D.new()
 var proportions := ""
-var jump_was_down := false
+var jump_pressed := false
+var tuning_sliders: Dictionary[StringName, HSlider] = {}
+var tuning_numbers: Dictionary[StringName, Label] = {}
+var tuning_status := Label.new()
 
 
 func _ready() -> void:
@@ -19,6 +30,8 @@ func _ready() -> void:
 
 	add_child(player)
 	player.reset()
+	if FileAccess.file_exists(Settings.LOCAL_FILE) and not player.settings.load_from():
+		tuning_status.text = "Could not load saved movement settings."
 	var visual := Mannequin.new()
 	# Bind after the visual is ready so the pose uses the current proportions.
 	player.motion.add_child(visual)
@@ -38,12 +51,30 @@ func _ready() -> void:
 	add_controls()
 
 
+func _input(event: InputEvent) -> void:
+	if not event.is_pressed() or event.is_echo():
+		return
+	if event is InputEventKey and event.physical_keycode == KEY_SPACE:
+		jump_pressed = true
+	elif event is InputEventJoypadButton and event.button_index == JOY_BUTTON_A:
+		jump_pressed = true
+
+
 func _physics_process(delta: float) -> void:
 	var left := Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)
 	var right := Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT)
-	var jump := Input.is_physical_key_pressed(KEY_SPACE)
-	player.step(delta, float(right) - float(left), jump and not jump_was_down)
-	jump_was_down = jump
+	var direction := float(right) - float(left)
+	var jump_held := Input.is_physical_key_pressed(KEY_SPACE)
+	var analog := 0.0
+	for device in Input.get_connected_joypads():
+		var stick := Controller.stick_intent(Input.get_joy_axis(device, JOY_AXIS_LEFT_X))
+		if absf(stick) > absf(analog):
+			analog = stick
+		jump_held = jump_held or Input.is_joy_button_pressed(device, JOY_BUTTON_A)
+	if not left and not right:
+		direction = analog
+	player.step(delta, direction, jump_held, jump_pressed)
+	jump_pressed = false
 	if absf(player.position.x) > 82.0 or player.position.y < -6.0:
 		player.reset()
 
@@ -102,13 +133,13 @@ func add_controls() -> void:
 	panel.add_child(buttons)
 	add_button(buttons, "Back to proportions", Callable(self, "return_to_viewer"))
 	add_button(buttons, "Reset position", player.reset)
+	add_button(buttons, "Save movement", save_movement)
 	var hint := Label.new()
-	hint.text = "A / D or ← / → to move   ·   Space to jump"
+	hint.text = "A / D, ← / → or left stick to move   ·   Space or south face button to jump"
 	panel.add_child(hint)
-	add_adjustment(panel, "Move speed", 2.5, 9.0, player.speed,
-		func(value: float): player.speed = value)
-	add_adjustment(panel, "Jump strength", 4.0, 11.0, player.jump_speed,
-		func(value: float): player.jump_speed = value)
+	for key: StringName in TUNING_LABELS:
+		add_adjustment(panel, key)
+	panel.add_child(tuning_status)
 
 
 func add_button(row: HBoxContainer, caption: String, action: Callable) -> void:
@@ -120,29 +151,41 @@ func add_button(row: HBoxContainer, caption: String, action: Callable) -> void:
 	row.add_child(button)
 
 
-func add_adjustment(panel: VBoxContainer, caption: String, minimum: float, maximum: float,
-		initial: float, action: Callable) -> void:
+func add_adjustment(panel: VBoxContainer, key: StringName) -> void:
 	var row := HBoxContainer.new()
 	panel.add_child(row)
 	var label := Label.new()
-	label.custom_minimum_size.x = 108
-	label.text = caption
+	label.custom_minimum_size.x = 152
+	label.text = TUNING_LABELS[key]
 	row.add_child(label)
 	var slider := HSlider.new()
-	slider.custom_minimum_size.x = 105
+	slider.custom_minimum_size.x = 130
 	slider.focus_mode = Control.FOCUS_NONE
-	slider.min_value = minimum
-	slider.max_value = maximum
+	var limits: Vector3 = Settings.LIMITS[key]
+	slider.min_value = snappedf(limits.x, 0.1)
+	slider.max_value = limits.y
 	slider.step = 0.1
-	slider.value = initial
+	slider.value = player.settings.values[key]
 	row.add_child(slider)
+	tuning_sliders[key] = slider
 	var value_label := Label.new()
-	value_label.text = "%.1f" % initial
+	value_label.text = "%.1f" % slider.value
 	row.add_child(value_label)
-	slider.value_changed.connect(func(value: float):
-		value_label.text = "%.1f" % value
-		action.call(value)
-	)
+	tuning_numbers[key] = value_label
+	slider.value_changed.connect(adjust_movement.bind(key))
+
+
+func adjust_movement(value: float, key: StringName) -> void:
+	player.settings.adjust(key, value)
+	for setting: StringName in tuning_sliders:
+		var current: float = player.settings.values[setting]
+		tuning_sliders[setting].set_value_no_signal(current)
+		tuning_numbers[setting].text = "%.1f" % current
+	tuning_status.text = "Unsaved movement settings"
+
+
+func save_movement() -> void:
+	tuning_status.text = "Movement settings saved." if player.settings.save_to() else "Could not save movement settings."
 
 
 func return_to_viewer() -> void:

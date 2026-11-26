@@ -172,3 +172,9 @@ New saves include all eleven parts. The earlier preset versions load with the or
 The creator's saved proportions are now the working default. Compared with the original dimensions, forearms are 20 percent longer, the neck is 20 percent thinner, and the torso is 21 percent taller. The proportion viewer remains an in-game editor for the current humanoid. The same visual model is used for the first movement test.
 
 The movement preview adds side-on walking, stopping, and jumping on a floor with one low obstacle. It uses an independent controller and collision shape. The procedural stride and air pose blend in response to velocity and floor contact. Preview sliders expose speed and jump strength for immediate feedback. Movement parameters are session-local at this stage.
+
+### Controller input and movement tuning
+
+The movement preview accepts the controller's left stick and bottom face button alongside keyboard movement and mouse tuning. Stick tilt interpolates between adjustable minimum and maximum walking speeds. Releasing jump early limits the remaining upward velocity, while holding jump allows the full launch. Tap and hold strengths can be tuned independently. The upper body leans from the hips based on actual ground speed, with an adjustable maximum angle.
+
+Movement settings save to a separate local JSON file and reload the next time the preview opens. The first airborne animation remains available for later refinement.
