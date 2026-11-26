@@ -28,6 +28,10 @@ Explore letting creators carry selected editing capabilities into their playable
 
 One model keeps the published level as the baseline and applies edits to the player's own playthrough. Restarting can restore the baseline. The author could allow players to copy the published version, save the version they made while playing, or share a resulting creation.
 
+## Initial development direction
+
+Start with one original playable figurine and grow the creation tools around a physical sandbox. Establish the figurine's appearance first, then tune its movement and animation. Introduce playful object and material manipulation before expanding into mechanical components and logic. Keep the character framework extensible as these needs become concrete.
+
 ## Worlds and visual identity
 
 The starting play style is a layered platformer built around a classic three-layer or multilayer world. Creators should also be able to make sophisticated top-down games and explore plain 2D and true 3D as the tools develop. The scope and sequencing of those modes remain open.

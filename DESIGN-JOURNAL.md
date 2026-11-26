@@ -136,3 +136,9 @@ Mirror extrusion is a workspace toggle with a fixed vertical centerline for this
 ### Contextual mirroring and hover help
 
 Playtest feedback showed that the workspace mirror toggle and fixed centerline were hard to connect to the selected point. A missing opposite point could prevent extrusion outright. Mirroring now lives on a selected point's handles. Clicking it arms the next pull around that point, and a sideways pull grows two links from the same source. The arrows, ring, and mirror handle explain their actions on hover.
+
+### Shift to an appearance-first starter figurine
+
+The point editor playtest made construction approachable, but the activity felt like rigging. Start the next development phase with one original cartoon mannequin, then tune its movement and animation before broadening the sandbox tools. Keep the point editor available as an experiment for potential advanced tools. The character engine, player–developer parity, and inspectable components remain long-term goals.
+
+Aim for the broad proportions discussed using Sackboy and Restitched as references. The original figurine should have an oversized head, a compact body, and short limbs. The first appearance pass should be simple enough to revise quickly and expressive enough to judge in the side view at gameplay scale. Materials, facial details, and exact proportions remain open.
