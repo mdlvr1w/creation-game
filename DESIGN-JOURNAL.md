@@ -210,3 +210,9 @@ The first test uses an upright cube constrained to the movement plane and focuse
 ### Grab reach and exertion
 
 The grab playtest called for starting farther from the cube, straighter arms during the hold, and clearer exertion in the pose. The grab range and resting gap are larger. The gap adjusts slightly as the body leans so the forearms keep reaching for the cube. The figurine leans forward when pushing and leans back when pulling, with the amount driven by how hard the player steers. The existing forward lean setting sets the scale.
+
+### Grabbing a moving object from different positions
+
+Grabbing should eventually work from reachable positions around an object. A player might grab a cube from its side, catch it during a jump, reach down to grab it while standing on it, or hold on as it tumbles down steps. Where the figurine grabs should matter. The grip should follow the original contact points as the cube turns, and forces applied there should let it tip or roll. The object's mass and collisions should also affect the figurine.
+
+A focused next experiment could let the cube rotate in the side-scrolling plane and test whether a jump can lift the near face enough to lever it over one low step. Standing grabs and holding on through a tumble remain goals for later experiments. The pose, allowable reach, and when a grip gives way are still open.
