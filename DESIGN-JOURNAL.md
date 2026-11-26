@@ -120,3 +120,9 @@ The proposed interaction model keeps an idle object clear of controls, highlight
 Points and connections could have optional names, such as Elbow and Forearm, to help creators identify them when inspecting larger structures. Names describe the creator's intent. Parenting and other relationships are configured independently.
 
 A small next experiment could test the direct interaction loop by building a head, neck, and spine with repeated extrusion. Handle positioning, how selection transfers without crowding nearby points, and when naming should enter the prototype remain open.
+
+### Focus for the next construction playtest
+
+Explore mirroring as an optional modifier of creative actions. Extrusion is a first candidate, with placement, connections, rotation, and other actions to consider as their behavior becomes clearer. Preview both sides before committing a mirrored gesture. A new point on the centerline can be shared by both sides. Off-center naming conventions and persistent symmetry remain open.
+
+Explore both directional and unrestricted extrusion in the same direct manipulation workflow. Directional extrusion gives a precise axis. Unrestricted extrusion lets the creator choose an angle by dragging. Both should support continuing from the new point. A small playtest could compare a straight spine with a bent arm, then return to the shoulder to start another branch. Evaluate how enjoyable and satisfying each gesture feels, as well as how easily it produces the intended shape. A limited mirrored extrusion test could follow once those gestures are easy to read.
