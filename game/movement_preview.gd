@@ -57,9 +57,10 @@ func _ready() -> void:
 	player.motion.bind_model(visual)
 
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	camera.size = 7.6
 	add_child(camera)
-	update_camera(0.0)
+	update_camera()
 	camera.make_current()
 	add_controls()
 
@@ -103,8 +104,8 @@ func typing_number() -> bool:
 	return get_viewport().gui_get_focus_owner() is LineEdit
 
 
-func _process(delta: float) -> void:
-	update_camera(1.0 - exp(-delta * 7.0))
+func _process(_delta: float) -> void:
+	update_camera()
 	if head_look.device < 0:
 		motion_status.text = "Controller tilt unavailable"
 	elif head_look.recenter_pending:
@@ -113,8 +114,9 @@ func _process(delta: float) -> void:
 		motion_status.text = "Tilt the controller to look around"
 
 
-func update_camera(weight: float) -> void:
-	var focus_x := lerpf(camera.position.x, player.position.x, weight)
+func update_camera() -> void:
+	# Follow the same rendered position as the mannequin to keep it steady in the frame.
+	var focus_x := player.get_global_transform_interpolated().origin.x
 	camera.position = Vector3(focus_x, 4.2, 10.0)
 	camera.look_at(Vector3(focus_x, 1.9, 0))
 

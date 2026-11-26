@@ -56,10 +56,11 @@ func step(delta: float, direction: float, jump_held: bool, jump_pressed := false
 			jump_can_cut = false
 	jump_was_held = jump_held
 	move_and_slide()
-	motion.animate(delta, velocity, is_on_floor(), tuning.max_speed, tuning.lean_degrees)
+	motion.animate(delta, velocity, is_on_floor(), tuning.max_speed, tuning.lean_degrees, direction)
 
 
 func reset() -> void:
 	position = Vector3(0, 0.02, 0)
 	velocity = Vector3.ZERO
 	jump_can_cut = false
+	reset_physics_interpolation()

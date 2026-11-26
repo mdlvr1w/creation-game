@@ -3,4 +3,5 @@
 [ext_resource type="Script" path="res://game/workspace.gd" id="1"]
 
 [node name="Workspace" type="Node3D"]
+physics_interpolation_mode = 2
 script = ExtResource("1")

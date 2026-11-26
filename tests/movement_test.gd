@@ -110,6 +110,11 @@ func run() -> void:
 	check(is_equal_approx(restored.values.min_speed, 6.0), "older saves preserve existing tuning")
 	DirAccess.remove_absolute(settings_file)
 
+	check_pose_response(player.motion)
+	preview.update_camera()
+	check(is_equal_approx(preview.camera.position.x, player.get_global_transform_interpolated().origin.x),
+		"camera follows the rendered horizontal position")
+
 	preview.queue_free()
 	await process_frame
 	var viewer = Viewer.instantiate()
@@ -122,6 +127,29 @@ func run() -> void:
 	if failures == 0:
 		print("Movement checks passed.")
 	quit(int(failures > 0))
+
+
+func check_pose_response(motion) -> void:
+	var lower: MeshInstance3D = motion.model.limb_meshes[&"LeftLowerLeg"]
+	motion.head_look_target = Vector3.ZERO
+	for frame in 45:
+		motion.animate(1.0 / 60.0, Vector3.ZERO, true, 5.5, 0.0, 0.0)
+	var neutral_turn: float = motion.rotation.y
+	var foot_height: float = lower.global_position.y
+	motion.head_look_target = Vector3(0, -0.55, 0)
+	for frame in 45:
+		motion.animate(1.0 / 60.0, Vector3.ZERO, true, 5.5, 0.0, 0.0)
+	check(motion.rotation.y < neutral_turn - 0.1, "body follows the direction of head tilt")
+	check(is_equal_approx(lower.global_position.y, foot_height), "head-driven body turn does not lift the feet")
+
+	motion.head_look_target = Vector3.ZERO
+	var airborne_velocity := Vector3(4, -2, 0)
+	for frame in 45:
+		motion.animate(1.0 / 60.0, airborne_velocity, false, 5.5, 0.0, 0.0)
+	var momentum_turn: float = motion.rotation.y
+	motion.animate(1.0 / 60.0, airborne_velocity, false, 5.5, 0.0, -1.0)
+	check(motion.rotation.y < momentum_turn - 0.05,
+		"opposite input moves the pose toward the new direction while momentum is unchanged")
 
 
 func check_air_tuning(preview) -> void:

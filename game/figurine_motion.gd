@@ -11,6 +11,8 @@ var lean := 0.0
 var head_look_target := Vector3.ZERO
 var head_look := Vector3.ZERO
 var lean_axes: Array[Vector3] = []
+const BODY_LOOK_SHARE := 0.34
+const AIR_STEERING_POSE_SHARE := 0.42
 const UPPER_BODY := [&"Torso", &"Neck", &"Head"]
 
 
@@ -26,7 +28,7 @@ func bind_model(visual: Node3D) -> void:
 		lean_axes.append(rest[hip].origin - rest[hip].basis.y * (mesh.height * 0.5 - mesh.radius))
 
 
-func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, max_lean: float) -> void:
+func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, max_lean: float, direction: float) -> void:
 	var speed := absf(velocity.x)
 	var pace := clampf(speed / max_speed, 0.0, 1.0)
 	stride = move_toward(stride, pace if grounded else 0.0, delta * 5.0)
@@ -35,8 +37,13 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 		phase = fposmod(phase + speed * delta * 2.2, TAU)
 	if speed > 0.12:
 		facing = signf(velocity.x)
-	var turn := facing * lerpf(0.22, 1.05, maxf(pace, air_pose * 0.65))
-	rotation.y = lerp_angle(rotation.y, turn, 1.0 - exp(-delta * 13.0))
+	var turn_extent := lerpf(0.22, 1.05, maxf(pace, air_pose * 0.65))
+	var turn := facing * turn_extent
+	if not grounded:
+		turn = lerpf(turn, signf(direction) * turn_extent, absf(direction) * AIR_STEERING_POSE_SHARE)
+	head_look = head_look.lerp(head_look_target, 1.0 - exp(-delta * 12.0))
+	var look_yaw := head_look.y * BODY_LOOK_SHARE
+	rotation.y = lerp_angle(rotation.y, turn + look_yaw, 1.0 - exp(-delta * 17.0))
 
 	var target_lean := deg_to_rad(max_lean) * pow(pace, 0.72) if grounded else 0.0
 	lean = lerpf(lean, target_lean, 1.0 - exp(-delta * 10.0))
@@ -44,10 +51,9 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 	for part in UPPER_BODY:
 		model.get_node(NodePath(String(part))).transform = body_lean * rest[part]
 
-	head_look = head_look.lerp(head_look_target, 1.0 - exp(-delta * 12.0))
 	var head_rest := rest[&"Head"]
 	var pivot := head_rest.origin - Vector3.UP * head_rest.basis.y.length() * 0.5
-	var turn_head := Basis.from_euler(head_look)
+	var turn_head := Basis.from_euler(head_look - Vector3.UP * look_yaw)
 	model.get_node("Head").transform = body_lean * Transform3D(turn_head, pivot - turn_head * pivot) * head_rest
 
 	var swing := sin(phase) * stride

@@ -188,3 +188,9 @@ The movement preview exposes gravity strength and air inertia. Gravity sets down
 Both save buttons write local presets that load after a full restart. The movement sliders now have synchronized numeric fields and step arrows. The preview uses four boxes of different heights for jump and fall testing.
 
 Godot 4.7.2 adds native desktop controller motion support to the pinned build. The preview uses the controller's gravity estimate to animate head tilt relative to a neutral grip, with a button to recenter. The motion input stays independent of character movement and collision.
+
+### Body response and movement clarity
+
+The body shares a small amount of the controller-driven head turn by rotating around its vertical axis. The local head turn accounts for the body movement. This changes the pose without moving the collider, lifting the feet, or stretching the figure. While airborne, the visual facing blends movement input with current horizontal velocity, giving immediate feedback even when momentum delays reversal.
+
+The preview camera follows the interpolated rendered horizontal position. The figurine and camera now use the same position between physics ticks, which removes horizontal camera lag and reduces uneven motion on screen. The report of blur during play should be checked again in the packaged preview.
