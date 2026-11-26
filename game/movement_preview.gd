@@ -59,6 +59,7 @@ func _ready() -> void:
 	visual.decode_proportions(proportions)
 	visual.position.y = -visual.floor_height
 	player.motion.bind_model(visual)
+	add_head_direction_line(visual.head)
 
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
@@ -67,6 +68,25 @@ func _ready() -> void:
 	update_camera()
 	camera.make_current()
 	add_controls()
+
+
+func add_head_direction_line(head: MeshInstance3D) -> void:
+	var indicator := MeshInstance3D.new()
+	indicator.name = "HeadDirectionDebug"
+	var line := CylinderMesh.new()
+	line.top_radius = 0.012
+	line.bottom_radius = 0.012
+	line.height = 0.92
+	indicator.mesh = line
+	indicator.position.z = line.height * 0.5
+	indicator.rotation.x = PI * 0.5
+	indicator.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.no_depth_test = true
+	material.albedo_color = Color("#ffcf4a")
+	indicator.material_override = material
+	head.add_child(indicator)
 
 
 func _input(event: InputEvent) -> void:

@@ -14,7 +14,10 @@ var grip_side := 0.0
 var grip_anchor := Vector3.ZERO
 var grip_normal := Vector3.RIGHT
 var grip_blend := 0.0
-var grip_from_above := false
+var grip_start_yaw := 0.0
+var grip_lateral := Vector3.BACK
+var reach_lowering := 0.0
+var reach_pitch := 0.0
 var lean := 0.0
 var head_look_target := Vector3.ZERO
 var head_look := Vector3.ZERO
@@ -56,12 +59,11 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 		turn = lerpf(turn, signf(direction) * turn_extent, absf(direction) * AIR_STEERING_POSE_SHARE)
 	head_look = head_look.lerp(head_look_target, 1.0 - exp(-delta * 12.0))
 	var look_yaw := head_look.y * BODY_LOOK_SHARE
-	var grab_facing := grip_side
-	if grabbing and grip_from_above:
-		var horizontal := grip_cube.to_global(grip_anchor).x - global_position.x
-		if absf(horizontal) > 0.32:
-			grab_facing = signf(horizontal)
-	var yaw := grab_facing * PI * 0.5 if grabbing else turn + look_yaw
+	var yaw := turn + look_yaw
+	if grabbing:
+		var anchor_offset := grip_cube.to_global(grip_anchor) - global_position
+		var lateral_weight := smoothstep(0.25, 0.55, absf(anchor_offset.x))
+		yaw = lerp_angle(grip_start_yaw, signf(anchor_offset.x) * PI * 0.5, lateral_weight)
 	rotation.y = lerp_angle(rotation.y, yaw, 1.0 - exp(-delta * 17.0))
 
 	var target_lean := deg_to_rad(max_lean) * pow(pace, 0.72) if grounded else 0.0
@@ -72,13 +74,8 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 		target_lean = deg_to_rad(max_lean) * load * signf(effort)
 	lean = lerpf(lean, target_lean, 1.0 - exp(-delta * 10.0))
 	var hip_center := (lean_axes[0] + lean_axes[1]) * 0.5
-	var crouch := grip_blend if grip_from_above else 0.0
-	if crouch > 0.0 and is_instance_valid(reach_cube):
-		var anchor_height := reach_cube.to_global(grip_anchor).y - global_position.y
-		crouch *= 1.0 - smoothstep(0.16, 1.1, anchor_height)
-	var crouch_depth := clampf((hip_center.y - model.floor_height) * 0.80, 0.17, 1.25)
-	var body_lean := rotation_about(hip_center, lerpf(lean, 0.55, crouch))
-	body_lean.origin.y -= crouch_depth * crouch
+	var body_lean := supported_reach_pose(delta, grounded, hip_center)
+	var foot_plant := clampf(reach_lowering * 12.0, 0.0, 1.0)
 	for part in UPPER_BODY:
 		model.get_node(NodePath(String(part))).transform = body_lean * rest[part]
 
@@ -93,13 +90,53 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 		var tuck := clampf(0.18 + velocity.y * 0.02, 0.08, 0.32) * air_pose
 		pose_pair(side + "UpperLeg", side + "LowerLeg", cycle * 0.48 - tuck,
 			maxf(0.0, cycle) * 0.5 + tuck * 1.5)
-		if crouch > 0.0:
-			bend_knee(side, body_lean, crouch)
+		if foot_plant > 0.0:
+			bend_knee(side, body_lean, foot_plant)
 		pose_pair(side + "UpperArm", side + "LowerArm", -cycle * 0.40 - air_pose * 0.40,
 			-0.12 * stride - air_pose * 0.22, body_lean)
 
 		if grip_blend > 0.0 and is_instance_valid(reach_cube):
 			reach_for_cube(side, body_lean)
+
+
+func supported_reach_pose(delta: float, grounded: bool, hip_center: Vector3) -> Transform3D:
+	var supported_reach := 0.0
+	if grounded and grip_blend > 0.0 and is_instance_valid(reach_cube):
+		var anchor := model.to_local(reach_cube.to_global(grip_anchor))
+		var height: float = anchor.y - model.floor_height
+		var hip_height := maxf(hip_center.y - model.floor_height, 0.1)
+		supported_reach = grip_blend * (1.0 - smoothstep(hip_height * 0.22, hip_height * 0.85, height))
+	var pitch_goal := supported_reach * 0.76
+	var pitch_weight := 1.0 - exp(-delta * 17.0)
+	reach_pitch = lerpf(reach_pitch, pitch_goal, pitch_weight)
+	var body_pose := rotation_about(hip_center, lean + reach_pitch)
+	var lowering := 0.0
+	if supported_reach > 0.0:
+		for side in ["Left", "Right"]:
+			lowering = maxf(lowering, required_arm_drop(side, body_pose))
+		lowering = minf(lowering, maxf(0.0, hip_center.y - model.floor_height) * 0.85)
+	reach_lowering = lerpf(reach_lowering, lowering * supported_reach, pitch_weight)
+	body_pose.origin.y -= reach_lowering
+	return body_pose
+
+
+func required_arm_drop(side: String, body_pose: Transform3D) -> float:
+	var upper_name := StringName(side + "UpperArm")
+	var upper: MeshInstance3D = model.limb_meshes[upper_name]
+	var lower: MeshInstance3D = model.limb_meshes[StringName(side + "LowerArm")]
+	var upper_rest := rest[upper_name]
+	var start := body_pose * (upper_rest.origin - upper_rest.basis.y * segment_span(upper) * 0.5)
+	var target := model.to_local(hand_contact(upper_rest.origin.x, lower.mesh.radius))
+	var offset := target - start
+	var reach := (segment_span(upper) + segment_span(lower)) * 0.98
+	var vertical_reach := sqrt(maxf(0.0, reach * reach - offset.x * offset.x - offset.z * offset.z))
+	return maxf(0.0, -offset.y - vertical_reach)
+
+
+func hand_contact(shoulder_x: float, radius: float) -> Vector3:
+	var contact_local := grip_anchor + grip_normal * radius
+	contact_local += grip_lateral * clampf(shoulder_x, -0.33, 0.33)
+	return reach_cube.to_global(contact_local)
 
 
 func reach_for_cube(side: String, body_pose: Transform3D) -> void:
@@ -114,16 +151,13 @@ func reach_for_cube(side: String, body_pose: Transform3D) -> void:
 	var lower_span := lower_mesh.height - 2.0 * lower_mesh.radius
 	var shoulder := body_pose * (upper_rest.origin - upper_rest.basis.y * upper_span * 0.5)
 
-	# Both forearms track the same face in the cube's local coordinates.
-	var contact_local := grip_anchor + grip_normal * lower_mesh.radius
-	contact_local.z -= grip_side * clampf(upper_rest.origin.x, -0.36, 0.36)
-	var contact := reach_cube.to_global(contact_local)
+	var contact := hand_contact(upper_rest.origin.x, lower_mesh.radius)
 	var relaxed_tip := lower.position + lower.basis.y * lower_span * 0.5
 	var target: Vector3 = relaxed_tip.lerp(model.to_local(contact), grip_blend)
 	var outward := signf(upper_rest.origin.x)
 	var bend := Vector3(outward * 0.45, -1.0, 0.0)
-	if grip_from_above:
-		bend = Vector3(outward * 0.6, 0.0, -1.0)
+	var downward := smoothstep(0.15, 0.55, shoulder.y - target.y)
+	bend = bend.lerp(Vector3(outward * 0.6, 0.0, -1.0), downward)
 	solve_pair(upper, lower, shoulder, target, bend)
 
 

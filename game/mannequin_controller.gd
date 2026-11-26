@@ -1,6 +1,7 @@
 extends CharacterBody3D
 ## The test controller consumes movement intent. The mannequin is its visual child.
 
+const GripDynamics := preload("res://game/grip_dynamics.gd")
 const Motion := preload("res://game/figurine_motion.gd")
 const GrabCube := preload("res://game/grabbable_cube.gd")
 
@@ -77,28 +78,36 @@ func update_grip(cube: GrabCube, grab_held: bool) -> void:
 
 
 func try_top_grip(cube: GrabCube) -> bool:
+	var foot_on_face := support_point(cube)
+	if not foot_on_face.is_finite():
+		return false
+	var face_size := GrabCube.HALF_SIZE
+	var normal := Vector3(signf(foot_on_face.x), 0, 0) if absf(foot_on_face.x) > absf(foot_on_face.y) else Vector3(0, signf(foot_on_face.y), 0)
+	var tangent := Vector3(-normal.y, normal.x, 0)
+	var facing := motion.facing
+	var forward := cube.global_basis.inverse() * Vector3(facing, 0, 0)
+	var margin := face_size - GRIP_FACE_MARGIN
+	var along := clampf(foot_on_face.dot(tangent) + 0.20 * forward.dot(tangent), -margin, margin)
+	begin_grip(cube, normal * face_size + tangent * along, normal, facing, true)
+	return true
+
+
+func support_point(cube: GrabCube) -> Vector3:
 	var feet := cube.to_local(global_position)
 	var up := cube.global_basis.inverse() * Vector3.UP
 	var face_size := GrabCube.HALF_SIZE
 	for normal in [Vector3.UP, Vector3.DOWN, Vector3.LEFT, Vector3.RIGHT]:
 		var up_alignment: float = normal.dot(up)
-		if up_alignment < 0.55:
+		if up_alignment < cos(floor_max_angle):
 			continue
 		var distance: float = (feet.dot(normal) - face_size) / up_alignment
 		if distance < -0.12 or distance > 0.22:
 			continue
 		var foot_on_face := feet - up * distance
 		var tangent := Vector3(-normal.y, normal.x, 0)
-		var foot_along := foot_on_face.dot(tangent)
-		if absf(foot_along) > face_size or absf(foot_on_face.z) > face_size:
-			continue
-		var facing := motion.facing
-		var forward := cube.global_basis.inverse() * Vector3(facing, 0, 0)
-		var margin := face_size - GRIP_FACE_MARGIN
-		var along := clampf(foot_along + 0.20 * forward.dot(tangent), -margin, margin)
-		begin_grip(cube, normal * face_size + tangent * along, normal, facing, true)
-		return true
-	return false
+		if absf(foot_on_face.dot(tangent)) <= face_size and absf(foot_on_face.z) <= face_size:
+			return foot_on_face
+	return Vector3.INF
 
 
 func begin_grip(cube: GrabCube, anchor: Vector3, normal: Vector3, side: float, from_above: bool) -> void:
@@ -116,7 +125,11 @@ func begin_grip(cube: GrabCube, anchor: Vector3, normal: Vector3, side: float, f
 	motion.grip_side = side
 	motion.grip_anchor = anchor
 	motion.grip_normal = normal
-	motion.grip_from_above = from_above
+	motion.grip_start_yaw = motion.rotation.y
+	motion.grip_lateral = Vector3.BACK * -side
+	if from_above:
+		var lateral := cube.global_basis.inverse() * motion.global_basis.x
+		motion.grip_lateral = (lateral - normal * lateral.dot(normal)).normalized()
 
 
 func release_grip() -> void:
@@ -137,7 +150,7 @@ func step(delta: float, direction: float, jump_held: bool, jump_pressed := false
 	if held_cube != null:
 		target /= 1.0 + held_cube.mass * 0.28
 		if grip_from_above:
-			target = limit_top_grip_speed(target, grounded)
+			target = limit_top_grip_speed(target)
 		elif target * grip_side < 0.0:
 			# The player can pull away only as fast as the cube can follow.
 			var gap := (held_cube.to_global(grip_anchor).x - global_position.x) * grip_side
@@ -163,57 +176,43 @@ func step(delta: float, direction: float, jump_held: bool, jump_pressed := false
 			jump_can_cut = false
 	jump_was_held = jump_held
 	if held_cube != null:
-		pull_cube(target, delta, grounded)
+		var reaction := exchange_grip_force(target, grounded)
+		if not grounded:
+			velocity.y += reaction.y * delta / PLAYER_GRIP_MASS
+		if grip_from_above:
+			velocity.x += reaction.x * delta / (PLAYER_GRIP_MASS * 0.65)
 	move_and_slide()
 	if held_cube == null:
 		push_colliding_cube(target, delta)
 	motion.animate(delta, velocity, is_on_floor(), tuning.max_speed, tuning.lean_degrees, direction)
 
 
-func limit_top_grip_speed(target: float, grounded: bool) -> float:
-	var offset := held_cube.global_basis * grip_anchor
-	var error := held_cube.global_position.x + offset.x - global_position.x - grip_horizontal_offset
-	if absf(error) < 0.18:
+func limit_top_grip_speed(target: float) -> float:
+	var error := held_cube.to_global(grip_anchor).x - global_position.x - grip_horizontal_offset
+	if absf(error) < 0.18 or target * error >= 0.0:
 		return target
-	var anchor_speed := held_cube.linear_velocity.x + held_cube.angular_velocity.cross(offset).x
-	var inherited := get_platform_velocity().x if grounded else 0.0
-	var relative := target + inherited - anchor_speed
-	if relative * error >= 0.0:
-		return target
+	# Limit only outward player input. Support motion and grip tension act separately.
 	var slack := maxf(0.0, 0.50 - absf(error))
-	return anchor_speed - inherited - signf(error) * minf(absf(relative), slack * 11.0)
+	return signf(target) * minf(absf(target), slack * 11.0)
 
 
 func jump_load() -> float:
 	return 1.0 if held_cube == null else 1.0 / sqrt(1.0 + held_cube.mass * 0.23)
 
 
-func pull_cube(target_speed: float, delta: float, grounded: bool) -> void:
+func exchange_grip_force(target_speed: float, grounded: bool) -> Vector3:
 	if grip_from_above and motion.grip_blend < 0.75:
-		return
+		return Vector3.ZERO
 	var offset := held_cube.global_basis * grip_anchor
+	if grip_from_above and grounded and support_point(held_cube).is_finite():
+		GripDynamics.brace_against_support(held_cube, offset, target_speed)
+		return Vector3.ZERO
 	var anchor := held_cube.global_position + offset
-	var contact_speed := held_cube.linear_velocity + held_cube.angular_velocity.cross(offset)
 	var lean_offset := clampf(sin(motion.lean) * 0.38, -0.09, 0.09)
 	var horizontal_gap := grip_horizontal_offset if grip_from_above else grip_side * (GRAB_GAP + lean_offset)
 	var hold_point := global_position + Vector3(horizontal_gap, grip_height, 0)
-	var displacement := hold_point - anchor
-	var driver_x := lerpf(velocity.x, target_speed, 0.75)
-	var driver := Vector3(driver_x, velocity.y, 0)
-	if grounded and grip_from_above:
-		driver += get_platform_velocity()
-	var horizontal_force := displacement.x * 100.0 + (driver.x - contact_speed.x) * 19.0
-	var vertical_force := displacement.y * 95.0 + (driver.y - contact_speed.y) * 12.0
-	var mass := held_cube.mass
-	var force := Vector3(clampf(mass * horizontal_force, -150.0, 150.0),
-		clampf(mass * vertical_force, -115.0, 115.0), 0)
-	if force.length_squared() > 0.01:
-		held_cube.apply_force(force, offset)
-	# A loaded airborne grip pulls on the character as well as the cube.
-	if not grounded:
-		velocity.y -= force.y * delta / PLAYER_GRIP_MASS
-		if grip_from_above:
-			velocity.x -= force.x * delta / (PLAYER_GRIP_MASS * 0.65)
+	var driver := Vector3(velocity.x if grip_from_above else lerpf(velocity.x, target_speed, 0.75), velocity.y, 0)
+	return GripDynamics.exchange(held_cube, offset, hold_point - anchor, driver)
 
 
 func push_colliding_cube(target: float, delta: float) -> void:
@@ -229,6 +228,8 @@ func reset() -> void:
 	release_grip()
 	motion.grip_blend = 0.0
 	motion.reach_cube = null
+	motion.reach_lowering = 0.0
+	motion.reach_pitch = 0.0
 	position = Vector3(0, 0.02, 0)
 	velocity = Vector3.ZERO
 	jump_can_cut = false

@@ -232,3 +232,11 @@ Holding the grab button is the only input needed when the figurine stands on a r
 Holding R1 or E while standing on the orange cube now starts an automatic crouch. The figure bends its knees, leans its torso forward, and reaches down with both forearms to catch the top surface. The grip stays on the acquired face as it rolls. The cube can carry the figurine while its feet are supported and pull on it through the grip after its feet leave the surface.
 
 The preview includes Start on cube for repeated tests. Catching an underside and refining full-tumble reach remain future experiments.
+
+### Grip force and pose consolidation
+
+An off-center top grab on flat ground with a 34 percent stick tilt reached a cube speed of 25.7 units per second. The original grip driver included platform velocity that already carried the character through foot contact. Removing only that term reduced the peak but left long coasting in the same test.
+
+Movement now requests steering independently of support motion. When the hands and feet share the cube, only player steering applies bracing force through the grip. If the feet leave the cube, the grip uses contact separation and relative velocity, and its reaction can pull the figurine. In the original off-center test the peak dropped to about 4.3, and the cube settled after steering stopped. The cube can still carry the figurine and tip deliberately.
+
+Pose uses the current contact height, arm reach, and foot support to lower the figure. Reaching straight down preserves the starting yaw, and losing support lets the knees unfold while the grip remains. A temporary yellow line shows the head's forward direction in the movement preview.

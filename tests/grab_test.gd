@@ -1,6 +1,7 @@
 extends SceneTree
 
 const Preview := preload("res://game/movement_preview.tscn")
+const Controller := preload("res://game/mannequin_controller.gd")
 const Settings := preload("res://game/movement_settings.gd")
 
 var failures := 0
@@ -65,6 +66,7 @@ func run() -> void:
 	await test_jump_and_roll(preview)
 	await test_airborne_acquisition(preview)
 	await test_top_grab(preview)
+	await test_off_center_control(preview)
 
 	if failures == 0:
 		print("Grab checks passed.")
@@ -138,6 +140,8 @@ func test_top_grab(preview) -> void:
 	check(player.held_cube == cube and player.grip_from_above, "the grab button alone catches the top face")
 	if player.held_cube == null:
 		return
+	check(absf(angle_difference(player.motion.rotation.y, player.motion.grip_start_yaw)) < 0.08,
+		"reaching straight down preserves the starting orientation")
 	check(player.motion.model.torso.position.y < torso_y - 0.4, "top grab lowers the torso automatically")
 	check(player.motion.model.torso.basis.y.z > 0.12, "top grab tips the torso forward")
 	check(left_upper.basis.y.dot(left_lower.basis.y) < original_knee - 0.35, "crouching bends the knee")
@@ -146,6 +150,12 @@ func test_top_grab(preview) -> void:
 	for side in ["Left", "Right"]:
 		var forearm: MeshInstance3D = player.motion.model.limb_meshes[StringName(side + "LowerArm")]
 		check(face_gap(player, forearm, forearm.mesh.radius) < 0.10, "the forearms reach down to the top face")
+
+	for frame in 24:
+		player.motion.animate(1.0 / 60.0, Vector3.ZERO, false, 5.5, 14.0, 0.0)
+	check(player.motion.reach_lowering < 0.03 and player.motion.grip_cube == cube,
+		"the legs unfold when support is lost even while retaining the grip")
+	await frames(preview, 24, 0.0, true)
 
 	var original_x: float = player.position.x
 	cube.apply_central_impulse(Vector3(-8, 0, 0))
@@ -162,6 +172,26 @@ func test_top_grab(preview) -> void:
 
 	await frames(preview, 15, 0.0, false)
 	check(player.held_cube == null and not player.grip_from_above, "letting go releases the top grip")
+
+
+func test_off_center_control(preview) -> void:
+	preview.reset_sandbox()
+	var cube = preview.cube
+	var player = preview.player
+	cube.position = Vector3(-22, cube.HALF_SIZE + 0.02, 0)
+	player.position = Vector3(-21.65, cube.HALF_SIZE * 2.0 + 0.08, 0)
+	await frames(preview, 16, 0.0, false)
+	await frames(preview, 26, 0.0, true)
+	check(player.grip_from_above, "the off-center stance starts with a top grip")
+	check(absf(cube.linear_velocity.x) < 0.1, "a neutral stick does not drive shared support")
+	var peak_speed := 0.0
+	var small_tilt := Controller.stick_intent(-0.34)
+	for frame in 120:
+		await frames(preview, 1, small_tilt, true)
+		peak_speed = maxf(peak_speed, absf(cube.linear_velocity.x))
+	check(peak_speed > 0.35 and peak_speed < 7.0, "small input moves the cube without runaway speed")
+	await frames(preview, 60, 0.0, true)
+	check(absf(cube.linear_velocity.x) < 0.7, "the cube settles when steering stops")
 
 
 func face_gap(player, forearm: MeshInstance3D, radius: float) -> float:
