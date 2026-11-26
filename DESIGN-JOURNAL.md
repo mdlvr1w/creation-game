@@ -244,3 +244,7 @@ Pose uses the current contact height, arm reach, and foot support to lower the f
 ### Local playtest capture
 
 The movement preview can start and stop a local diagnostic capture. Starting again replaces the previous capture. Rendered gameplay frames and physics samples share a monotonic timestamp, so a visible issue can be compared with player input, current settings, foot support, object motion, and grip force. Image encoding runs off the game thread, with a bounded queue that drops frames when the writer falls behind. FFmpeg produces an optional MP4 from the same frames. The trace and indexed frames remain available independently.
+
+### Data-only playtest recording
+
+Use the creator's description to identify what felt wrong and the timestamped data to investigate what the game was doing. The capture now saves only the diagnostic trace. The capture buttons and the single latest recording workflow remain in use.

@@ -253,7 +253,7 @@ func start_recording() -> void:
 
 
 func update_recording_status(message: String) -> void:
-	record_button.disabled = recorder.recording or recorder.writer != null
+	record_button.disabled = recorder.recording
 	stop_record_button.disabled = not recorder.recording
 	capture_status.text = message
 

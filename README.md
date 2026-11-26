@@ -27,7 +27,7 @@ The viewer starts from the project preset in `game/default_proportions.json`. A 
 
 ## Record a playtest
 
-Use **Record** and **Stop recording** in the movement preview. A new recording replaces the previous capture in `user://playtest-capture/`. The folder contains gameplay frames, their timestamps, and a physics trace. The trace includes in-game inputs, tuning, support motion, and grip forces. With FFmpeg and its H.264 encoder available on PATH, the game also assembles the frames into `playtest.mp4`. Captures stay local.
+Use **Record** and **Stop recording** in the movement preview. Each new recording replaces the previous local trace at `user://playtest-capture/trace.jsonl`. It contains timestamped in-game inputs, tuning, support motion, and grip forces. Describe what you saw or felt so the trace can be used to investigate that moment.
 
 
 ## Try the point editor
