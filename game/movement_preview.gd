@@ -1,5 +1,6 @@
 extends Node3D
 
+const PlaytestRecorder := preload("res://game/playtest_recorder.gd")
 const Mannequin := preload("res://game/mannequin.gd")
 const GrabCube := preload("res://game/grabbable_cube.gd")
 const HeadLook := preload("res://game/controller_head_look.gd")
@@ -30,6 +31,10 @@ var tuning_fields: Dictionary[StringName, SpinBox] = {}
 var head_look := HeadLook.new()
 var motion_status := Label.new()
 var tuning_status := Label.new()
+var recorder := PlaytestRecorder.new()
+var capture_status := Label.new()
+var record_button: Button
+var stop_record_button: Button
 
 
 func _ready() -> void:
@@ -46,6 +51,7 @@ func _ready() -> void:
 	add_child(cube)
 	add_child(player)
 	add_child(head_look)
+	add_child(recorder)
 	player.reset()
 	if FileAccess.file_exists(Settings.LOCAL_FILE) and not player.settings.load_from():
 		tuning_status.text = "Could not load saved movement settings."
@@ -110,11 +116,13 @@ func _physics_process(delta: float) -> void:
 	var direction := float(right) - float(left)
 	var jump_held := use_keyboard and Input.is_physical_key_pressed(KEY_SPACE)
 	var analog := 0.0
+	var raw_stick := 0.0
 	var grab_held := use_keyboard and Input.is_physical_key_pressed(KEY_E)
 	for device in Input.get_connected_joypads():
-		var stick := Controller.stick_intent(Input.get_joy_axis(device, JOY_AXIS_LEFT_X))
-		if absf(stick) > absf(analog):
-			analog = stick
+		var axis := Input.get_joy_axis(device, JOY_AXIS_LEFT_X)
+		if absf(axis) > absf(raw_stick):
+			raw_stick = axis
+		analog = Controller.stick_intent(raw_stick)
 		jump_held = jump_held or Input.is_joy_button_pressed(device, JOY_BUTTON_A)
 		grab_held = grab_held or Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_SHOULDER)
 	if not left and not right:
@@ -122,12 +130,15 @@ func _physics_process(delta: float) -> void:
 	player.motion.head_look_target = head_look.sample()
 	player.update_grip(cube, grab_held)
 	player.step(delta, direction, jump_held, jump_pressed)
+	if recorder.recording:
+		record_physics(delta, direction, raw_stick, jump_held, grab_held)
 	jump_pressed = false
 	if absf(player.position.x) > 82.0 or player.position.y < -6.0 or cube.position.y < -6.0:
 		reset_sandbox()
 
 
 func reset_sandbox() -> void:
+	recorder.log_event("reset_positions", {})
 	player.reset()
 	cube.reset()
 
@@ -136,6 +147,7 @@ func start_on_cube() -> void:
 	reset_sandbox()
 	player.position = cube.position + Vector3.UP * (GrabCube.HALF_SIZE + 0.03)
 	player.reset_physics_interpolation()
+	recorder.log_event("start_on_cube", {})
 
 
 func typing_number() -> bool:
@@ -216,15 +228,78 @@ func add_controls() -> void:
 		add_adjustment(panel, key)
 	panel.add_child(tuning_status)
 	panel.add_child(motion_status)
+	var capture_buttons := HBoxContainer.new()
+	panel.add_child(capture_buttons)
+	record_button = add_button(capture_buttons, "Record", start_recording)
+	stop_record_button = add_button(capture_buttons, "Stop recording", recorder.stop)
+	stop_record_button.disabled = true
+	capture_buttons.add_child(capture_status)
+	recorder.status_changed.connect(update_recording_status)
 
 
-func add_button(row: HBoxContainer, caption: String, action: Callable) -> void:
+func start_recording() -> void:
+	var build_revision := "source checkout"
+	if FileAccess.file_exists("res://game/build_revision.txt"):
+		build_revision = FileAccess.get_file_as_string("res://game/build_revision.txt").strip_edges()
+	recorder.start({
+		"schema": 1,
+		"build": build_revision,
+		"engine": Engine.get_version_info().string,
+		"physics_hz": Engine.physics_ticks_per_second,
+		"movement": player.settings.values,
+		"proportions": JSON.parse_string(proportions),
+		"cube_mass": cube.mass,
+	})
+
+
+func update_recording_status(message: String) -> void:
+	record_button.disabled = recorder.recording or recorder.writer != null
+	stop_record_button.disabled = not recorder.recording
+	capture_status.text = message
+
+
+func record_physics(delta: float, direction: float, raw_stick: float, jump_held: bool, grab_held: bool) -> void:
+	var motion := player.motion
+	var head: MeshInstance3D = motion.model.head
+	recorder.log_event("physics", {
+		"dt": delta,
+		"input": {
+			"move": direction, "stick_x": raw_stick, "jump": jump_held,
+			"jump_pressed": jump_pressed, "grab": grab_held, "tilt": vector_values(motion.head_look_target),
+		},
+		"player": {
+			"position": vector_values(player.global_position), "velocity": vector_values(player.velocity),
+			"world_velocity": vector_values(player.get_real_velocity()), "drive_speed": player.last_drive_speed,
+			"grounded": player.is_on_floor(), "floor_normal": vector_values(player.get_floor_normal()),
+			"support_velocity": vector_values(player.get_platform_velocity()),
+			"body_yaw": motion.rotation.y, "head_forward": vector_values(head.global_basis.z.normalized()),
+			"reach_lowering": motion.reach_lowering, "reach_pitch": motion.reach_pitch,
+		},
+		"cube": {
+			"position": vector_values(cube.global_position), "velocity": vector_values(cube.linear_velocity),
+			"rotation_z": cube.rotation.z, "angular_velocity_z": cube.angular_velocity.z,
+		},
+		"grip": {
+			"held": player.held_cube != null, "from_above": player.grip_from_above,
+			"shared_support": player.last_shared_support, "force_on_cube": vector_values(player.last_grip_force),
+			"anchor_local": vector_values(player.grip_anchor) if player.held_cube != null else null,
+			"anchor_world": vector_values(cube.to_global(player.grip_anchor)) if player.held_cube != null else null,
+		},
+	})
+
+
+func vector_values(value: Vector3) -> Array[float]:
+	return [value.x, value.y, value.z]
+
+
+func add_button(row: HBoxContainer, caption: String, action: Callable) -> Button:
 	var button := Button.new()
 	button.text = caption
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size.y = 32
 	button.pressed.connect(action)
 	row.add_child(button)
+	return button
 
 
 func add_adjustment(panel: VBoxContainer, key: StringName) -> void:
@@ -270,6 +345,7 @@ func adjust_movement(value: float, key: StringName) -> void:
 		tuning_sliders[setting].set_value_no_signal(current)
 		tuning_fields[setting].set_value_no_signal(current)
 	tuning_status.text = "Unsaved movement settings"
+	recorder.log_event("movement_tuning", {"values": player.settings.values})
 
 
 func save_movement() -> void:

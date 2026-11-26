@@ -19,6 +19,9 @@ var grip_anchor := Vector3.ZERO
 var grip_height := 0.0
 var grip_horizontal_offset := 0.0
 var grip_from_above := false
+var last_drive_speed := 0.0
+var last_grip_force := Vector3.ZERO
+var last_shared_support := false
 
 var settings := Settings.new()
 var jump_was_held := false
@@ -157,6 +160,9 @@ func step(delta: float, direction: float, jump_held: bool, jump_pressed := false
 			var cube_follow_speed := maxf(0.0, -held_cube.linear_velocity.x * grip_side)
 			var slack := maxf(0.0, GRAB_RANGE - gap)
 			target = -grip_side * minf(absf(target), cube_follow_speed + slack * 12.0)
+	last_drive_speed = target
+	last_grip_force = Vector3.ZERO
+	last_shared_support = false
 	var coasting := is_zero_approx(direction)
 	var rate := braking if coasting else acceleration
 	if not grounded:
@@ -205,14 +211,17 @@ func exchange_grip_force(target_speed: float, grounded: bool) -> Vector3:
 		return Vector3.ZERO
 	var offset := held_cube.global_basis * grip_anchor
 	if grip_from_above and grounded and support_point(held_cube).is_finite():
-		GripDynamics.brace_against_support(held_cube, offset, target_speed)
+		last_shared_support = true
+		last_grip_force = GripDynamics.brace_against_support(held_cube, offset, target_speed)
 		return Vector3.ZERO
 	var anchor := held_cube.global_position + offset
 	var lean_offset := clampf(sin(motion.lean) * 0.38, -0.09, 0.09)
 	var horizontal_gap := grip_horizontal_offset if grip_from_above else grip_side * (GRAB_GAP + lean_offset)
 	var hold_point := global_position + Vector3(horizontal_gap, grip_height, 0)
 	var driver := Vector3(velocity.x if grip_from_above else lerpf(velocity.x, target_speed, 0.75), velocity.y, 0)
-	return GripDynamics.exchange(held_cube, offset, hold_point - anchor, driver)
+	var reaction := GripDynamics.exchange(held_cube, offset, hold_point - anchor, driver)
+	last_grip_force = -reaction
+	return reaction
 
 
 func push_colliding_cube(target: float, delta: float) -> void:

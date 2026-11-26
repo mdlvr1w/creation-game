@@ -10,12 +10,19 @@ if [[ "$version" != "$expected_version".* ]]; then
     exit 1
 fi
 
+revision="$(git rev-parse --short HEAD 2>/dev/null || printf unversioned)"
+if [[ "$revision" != unversioned ]] && [[ -n "$(git status --porcelain)" ]]; then
+    revision="$revision-dirty"
+fi
+printf '%s\n' "$revision" > game/build_revision.txt
+
 "$godot_binary" --headless --editor --import
 "$godot_binary" --headless --script res://tests/figure_test.gd
 "$godot_binary" --headless --script res://tests/workspace_test.gd
 "$godot_binary" --headless --script res://tests/mannequin_test.gd
 "$godot_binary" --headless --script res://tests/movement_test.gd
 "$godot_binary" --headless --script res://tests/grab_test.gd
+"$godot_binary" --headless --script res://tests/recording_test.gd
 mkdir -p dist/linux dist/windows
 cp notices/GODOT-*.txt dist/linux/
 cp notices/GODOT-*.txt dist/windows/

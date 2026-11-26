@@ -25,6 +25,11 @@ The orange physics cube starts to the left. Walk into it to nudge it, or hold **
 
 The viewer starts from the project preset in `game/default_proportions.json`. A local saved preset takes precedence. Movement uses the displayed proportions and blends the limbs according to horizontal speed and whether the character is on the ground.
 
+## Record a playtest
+
+Use **Record** and **Stop recording** in the movement preview. A new recording replaces the previous capture in `user://playtest-capture/`. The folder contains gameplay frames, their timestamps, and a physics trace. The trace includes in-game inputs, tuning, support motion, and grip forces. With FFmpeg and its H.264 encoder available on PATH, the game also assembles the frames into `playtest.mp4`. Captures stay local.
+
+
 ## Try the point editor
 
 Choose **Point editor** in the viewer to open the earlier construction prototype.
@@ -38,7 +43,7 @@ Choose **Point editor** in the viewer to open the earlier construction prototype
 
 ## Build and test
 
-Install Godot **4.7.2 stable** and its matching export templates. Run `GODOT_BIN=/path/to/godot ./scripts/build.sh` from Linux. The script imports the project, runs the headless figure, workspace, mannequin, movement, and grab tests, and exports both builds to `dist/`.
+Install Godot **4.7.2 stable** and its matching export templates. Run `GODOT_BIN=/path/to/godot ./scripts/build.sh` from Linux. The script imports the project, runs the headless figure, workspace, mannequin, movement, grab, and recording tests, and exports both builds to `dist/`.
 
 `game/figure.gd` owns the saved points and connections. `game/workspace.gd` handles the in-game tools and draws the figure in a 3D viewport. The first workspace uses an orthographic camera, constrains new points to a plane, and uses Godot's Compatibility renderer. The saved format includes depth so the planar input tool need not define the format for later tools.
 

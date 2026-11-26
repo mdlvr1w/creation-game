@@ -16,7 +16,9 @@ static func exchange(cube: RigidBody3D, offset: Vector3, gap: Vector3, driver: V
 	return -force
 
 
-static func brace_against_support(cube: RigidBody3D, offset: Vector3, drive_speed: float) -> void:
+static func brace_against_support(cube: RigidBody3D, offset: Vector3, drive_speed: float) -> Vector3:
 	# Feet already carry the character on this body. Only active effort drives the shared support.
+	var force := Vector3(drive_speed * cube.mass * 11.0, 0, 0)
 	if not is_zero_approx(drive_speed):
-		cube.apply_force(Vector3(drive_speed * cube.mass * 11.0, 0, 0), offset)
+		cube.apply_force(force, offset)
+	return force

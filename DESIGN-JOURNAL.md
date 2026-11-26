@@ -240,3 +240,7 @@ An off-center top grab on flat ground with a 34 percent stick tilt reached a cub
 Movement now requests steering independently of support motion. When the hands and feet share the cube, only player steering applies bracing force through the grip. If the feet leave the cube, the grip uses contact separation and relative velocity, and its reaction can pull the figurine. In the original off-center test the peak dropped to about 4.3, and the cube settled after steering stopped. The cube can still carry the figurine and tip deliberately.
 
 Pose uses the current contact height, arm reach, and foot support to lower the figure. Reaching straight down preserves the starting yaw, and losing support lets the knees unfold while the grip remains. A temporary yellow line shows the head's forward direction in the movement preview.
+
+### Local playtest capture
+
+The movement preview can start and stop a local diagnostic capture. Starting again replaces the previous capture. Rendered gameplay frames and physics samples share a monotonic timestamp, so a visible issue can be compared with player input, current settings, foot support, object motion, and grip force. Image encoding runs off the game thread, with a bounded queue that drops frames when the writer falls behind. FFmpeg produces an optional MP4 from the same frames. The trace and indexed frames remain available independently.
