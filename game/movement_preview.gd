@@ -35,6 +35,7 @@ var tuning_status := Label.new()
 func _ready() -> void:
 	add_child(Stage.new())
 	add_platform(Vector3(0, -0.5, 0), Vector3(180, 1, 16), Color("#404b51"), false)
+	add_platform(Vector3(-9.5, 0.14, 0), Vector3(2.25, 0.28, 2.6), Color("#587e79"), true)
 	for index in 4:
 		var height: float = [0.38, 0.82, 1.40, 2.15][index]
 		var color := Color("#587e79").lightened(index * 0.045)
@@ -182,7 +183,7 @@ func add_controls() -> void:
 	hint.text = "A / D, ← / → or left stick to move   ·   Space or south face button to jump"
 	panel.add_child(hint)
 	var grab_hint := Label.new()
-	grab_hint.text = "Hold R1 or E near the orange cube to grab it"
+	grab_hint.text = "Hold R1 or E near the orange cube · Jump to lift the face you grabbed"
 	panel.add_child(grab_hint)
 	for key: StringName in TUNING_LABELS:
 		add_adjustment(panel, key)

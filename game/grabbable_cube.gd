@@ -9,7 +9,10 @@ func _ready() -> void:
 	mass = 3.0
 	collision_layer = 2
 	axis_lock_linear_z = true
-	lock_rotation = true
+	axis_lock_angular_x = true
+	axis_lock_angular_y = true
+	angular_damp = 0.85
+	continuous_cd = true
 	physics_material_override = PhysicsMaterial.new()
 	physics_material_override.friction = 0.34
 	var collider := CollisionShape3D.new()
@@ -31,7 +34,7 @@ func _ready() -> void:
 
 
 func reset() -> void:
-	global_position = start
+	global_transform = Transform3D(Basis.IDENTITY, start)
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	sleeping = false

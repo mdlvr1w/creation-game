@@ -11,6 +11,8 @@ var facing := 1.0
 var grip_cube: GrabCube
 var reach_cube: GrabCube
 var grip_side := 0.0
+var grip_anchor := Vector3.ZERO
+var grip_normal := Vector3.RIGHT
 var grip_blend := 0.0
 var lean := 0.0
 var head_look_target := Vector3.ZERO
@@ -97,11 +99,10 @@ func reach_for_cube(side: String, body_pose: Transform3D) -> void:
 	var lower_span := lower_mesh.height - 2.0 * lower_mesh.radius
 	var shoulder := body_pose * (upper_rest.origin - upper_rest.basis.y * upper_span * 0.5)
 
-	# The rounded end of the forearm touches the near face of the cube.
-	var contact := reach_cube.global_position
-	contact.x -= grip_side * (GrabCube.HALF_SIZE + lower_mesh.radius)
-	contact.y += 0.53
-	contact.z -= grip_side * clampf(upper_rest.origin.x, -0.36, 0.36)
+	# Both forearms track the same face in the cube's local coordinates.
+	var contact_local := grip_anchor + grip_normal * lower_mesh.radius
+	contact_local.z -= grip_side * clampf(upper_rest.origin.x, -0.36, 0.36)
+	var contact := reach_cube.to_global(contact_local)
 	var relaxed_tip := lower.position + lower.basis.y * lower_span * 0.5
 	var target: Vector3 = relaxed_tip.lerp(model.to_local(contact), grip_blend)
 	var offset := target - shoulder

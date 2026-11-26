@@ -216,3 +216,9 @@ The grab playtest called for starting farther from the cube, straighter arms dur
 Grabbing should eventually work from reachable positions around an object. A player might grab a cube from its side, catch it during a jump, reach down to grab it while standing on it, or hold on as it tumbles down steps. Where the figurine grabs should matter. The grip should follow the original contact points as the cube turns, and forces applied there should let it tip or roll. The object's mass and collisions should also affect the figurine.
 
 A focused next experiment could let the cube rotate in the side-scrolling plane and test whether a jump can lift the near face enough to lever it over one low step. Standing grabs and holding on through a tumble remain goals for later experiments. The pose, allowable reach, and when a grip gives way are still open.
+
+### Jumping with a rotating cube
+
+The cube now rotates in the side-scrolling plane. A grip stores a point and face in the cube's own coordinates so the forearms follow the face as it tips. The hold applies force at that point. The grabbed edge can lift first, and a released cube retains its rotation. The figure can jump with the cube or catch its side after takeoff. Mass lowers a held jump, and the vertical grip force also acts back on the airborne figure.
+
+The preview adds a low step to the left of the cube. Pulling from the step while jumping can haul the cube up. Side acquisition is the focus of this experiment. Crouching to grab from above and reliably maintaining contact through a full tumble remain future work.
