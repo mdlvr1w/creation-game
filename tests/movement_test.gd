@@ -17,6 +17,7 @@ func run() -> void:
 	var preview = Preview.instantiate()
 	root.add_child(preview)
 	preview.set_physics_process(false)
+	preview.cube.position.x = -50.0
 	var player = preview.player
 	player.settings = Settings.new()
 	var visual = player.motion.model

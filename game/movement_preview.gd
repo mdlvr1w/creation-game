@@ -1,6 +1,7 @@
 extends Node3D
 
 const Mannequin := preload("res://game/mannequin.gd")
+const GrabCube := preload("res://game/grabbable_cube.gd")
 const HeadLook := preload("res://game/controller_head_look.gd")
 const Controller := preload("res://game/mannequin_controller.gd")
 const Settings := preload("res://game/movement_settings.gd")
@@ -20,6 +21,7 @@ const TUNING_HELP := {
 const Stage := preload("res://game/mannequin_stage.gd")
 
 var player := Controller.new()
+var cube := GrabCube.new()
 var camera := Camera3D.new()
 var proportions := ""
 var jump_pressed := false
@@ -40,6 +42,7 @@ func _ready() -> void:
 	for index in range(-19, 20):
 		add_floor_marker(index * 2.5)
 
+	add_child(cube)
 	add_child(player)
 	add_child(head_look)
 	player.reset()
@@ -86,18 +89,26 @@ func _physics_process(delta: float) -> void:
 	var direction := float(right) - float(left)
 	var jump_held := use_keyboard and Input.is_physical_key_pressed(KEY_SPACE)
 	var analog := 0.0
+	var grab_held := use_keyboard and Input.is_physical_key_pressed(KEY_E)
 	for device in Input.get_connected_joypads():
 		var stick := Controller.stick_intent(Input.get_joy_axis(device, JOY_AXIS_LEFT_X))
 		if absf(stick) > absf(analog):
 			analog = stick
 		jump_held = jump_held or Input.is_joy_button_pressed(device, JOY_BUTTON_A)
+		grab_held = grab_held or Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_SHOULDER)
 	if not left and not right:
 		direction = analog
 	player.motion.head_look_target = head_look.sample()
+	player.update_grip(cube, grab_held)
 	player.step(delta, direction, jump_held, jump_pressed)
 	jump_pressed = false
-	if absf(player.position.x) > 82.0 or player.position.y < -6.0:
-		player.reset()
+	if absf(player.position.x) > 82.0 or player.position.y < -6.0 or cube.position.y < -6.0:
+		reset_sandbox()
+
+
+func reset_sandbox() -> void:
+	player.reset()
+	cube.reset()
 
 
 func typing_number() -> bool:
@@ -164,12 +175,15 @@ func add_controls() -> void:
 	var buttons := HBoxContainer.new()
 	panel.add_child(buttons)
 	add_button(buttons, "Back to proportions", Callable(self, "return_to_viewer"))
-	add_button(buttons, "Reset position", player.reset)
+	add_button(buttons, "Reset positions", reset_sandbox)
 	add_button(buttons, "Save movement", save_movement)
 	add_button(buttons, "Center head", head_look.recenter)
 	var hint := Label.new()
 	hint.text = "A / D, ← / → or left stick to move   ·   Space or south face button to jump"
 	panel.add_child(hint)
+	var grab_hint := Label.new()
+	grab_hint.text = "Hold R1 or E near the orange cube to grab it"
+	panel.add_child(grab_hint)
 	for key: StringName in TUNING_LABELS:
 		add_adjustment(panel, key)
 	panel.add_child(tuning_status)

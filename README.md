@@ -21,6 +21,8 @@ Choose **Try movement** in the figurine viewer. Move with **A/D**, **←/→**, 
 
 Adjust **Min walk speed**, **Max walk speed**, **Tap jump strength**, **Hold jump strength**, **Forward lean**, **Gravity strength**, and **Air inertia** with the sliders, by typing values, or with the number fields’ arrows. Higher gravity pulls downward faster. Higher air inertia carries more momentum and slows midair turns. At 100%, releasing movement preserves horizontal momentum in the air and steering still responds. **Save movement** writes the current settings to `user://mannequin-movement.json` and reloads them on the next preview, including after restarting the game. The preview has four boxes of increasing height for testing takeoff and landing. Tilt a supported controller to move the head, and use **Center head** to set your current grip as neutral. **Back to proportions** returns to the proportions you were viewing, including unsaved changes.
 
+The orange physics cube starts to the left. Walk into it to nudge it, or hold **R1** on the controller or **E** on the keyboard while nearby to grab it. Move toward it to push or back away to pull. The figurine faces the cube while holding it, and the cube's mass slows movement. Release the button to let go. This first grab is for grounded push and pull. **Reset positions** puts the figure and cube back at their starting positions.
+
 The viewer starts from the project preset in `game/default_proportions.json`. A local saved preset takes precedence. Movement uses the displayed proportions and blends the limbs according to horizontal speed and whether the character is on the ground.
 
 ## Try the point editor
@@ -36,7 +38,7 @@ Choose **Point editor** in the viewer to open the earlier construction prototype
 
 ## Build and test
 
-Install Godot **4.7.2 stable** and its matching export templates. Run `GODOT_BIN=/path/to/godot ./scripts/build.sh` from Linux. The script imports the project, runs the headless figure, workspace, mannequin, and movement tests, and exports both builds to `dist/`.
+Install Godot **4.7.2 stable** and its matching export templates. Run `GODOT_BIN=/path/to/godot ./scripts/build.sh` from Linux. The script imports the project, runs the headless figure, workspace, mannequin, movement, and grab tests, and exports both builds to `dist/`.
 
 `game/figure.gd` owns the saved points and connections. `game/workspace.gd` handles the in-game tools and draws the figure in a 3D viewport. The first workspace uses an orthographic camera, constrains new points to a plane, and uses Godot's Compatibility renderer. The saved format includes depth so the planar input tool need not define the format for later tools.
 

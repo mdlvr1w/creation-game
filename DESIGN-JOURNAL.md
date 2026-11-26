@@ -200,3 +200,9 @@ The preview camera follows the interpolated rendered horizontal position. The fi
 The creator adjusted movement and proportions, jumped around, and watched the figurine respond to controller tilt and midair input. The resulting movement felt enjoyable. Getting to a setup that felt right was enjoyable in itself and matched the Play-Doh analogy that has guided the project.
 
 Playing with the result prompted ideas for higher platforms, something to grab, and objects to interact with. These are openings for future sandbox experiments. The jump pose still feels stiff, and the visual turn on a midair direction change can read as two or three steps. Both remain open for a later animation pass.
+
+### First grab and hold interaction
+
+The movement preview adds a movable orange cube. Walking into it pushes it. Holding R1 or E near it makes the figure face the cube and reach for it with both forearms. The reach bends the elbows while preserving the limb lengths. While holding, movement toward the cube pushes it and movement away pulls it while the figure walks backward. The hold transfers force to the cube and its mass reduces player speed. Releasing restores the ordinary controls.
+
+The first test uses an upright cube constrained to the movement plane and focuses on grounded push and pull. Jumping is available after release. Reset positions restores both bodies for a fresh experiment.
