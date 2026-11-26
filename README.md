@@ -11,6 +11,10 @@ When a discussion reaches an important conclusion, update the relevant section o
 
 After building, run `dist/linux/workspace.x86_64` on Linux or `dist/windows/workspace.exe` on Windows. Both builds target x86-64 and include the runtime. Use **Front**, **Three-quarter**, and **Side** to inspect the white mannequin in its neutral pose.
 
+Click any arm or leg segment to adjust it. **Size** scales length and thickness together, **Length** changes the distance between joints, and **Thickness** changes the width. Each control is a percentage of the original dimension. You can drag the sliders or type an exact percentage. Upper segments carry their lower segments as they stretch.
+
+**Save proportions** writes all eight segments to `user://mannequin-proportions.json` and replaces the previous local preset. The viewer reads it automatically on launch. This file is outside the repository.
+
 ## Try the point editor
 
 Choose **Point editor** in the viewer to open the earlier construction prototype.
@@ -24,7 +28,7 @@ Choose **Point editor** in the viewer to open the earlier construction prototype
 
 ## Build and test
 
-Install Godot **4.5.1 stable** and its matching export templates. Run `GODOT_BIN=/path/to/godot ./scripts/build.sh` from Linux. The script imports the project, runs the headless figure and workspace tests, and exports both builds to `dist/`.
+Install Godot **4.5.1 stable** and its matching export templates. Run `GODOT_BIN=/path/to/godot ./scripts/build.sh` from Linux. The script imports the project, runs the headless figure, workspace, and mannequin tests, and exports both builds to `dist/`.
 
 `game/figure.gd` owns the saved points and connections. `game/workspace.gd` handles the in-game tools and draws the figure in a 3D viewport. The first workspace uses an orthographic camera, constrains new points to a plane, and uses Godot's Compatibility renderer. The saved format includes depth so the planar input tool need not define the format for later tools.
 

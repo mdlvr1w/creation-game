@@ -13,6 +13,7 @@ fi
 "$godot_binary" --headless --editor --import
 "$godot_binary" --headless --script res://tests/figure_test.gd
 "$godot_binary" --headless --script res://tests/workspace_test.gd
+"$godot_binary" --headless --script res://tests/mannequin_test.gd
 mkdir -p dist/linux dist/windows
 cp notices/GODOT-*.txt dist/linux/
 cp notices/GODOT-*.txt dist/windows/

@@ -148,3 +148,9 @@ Aim for the broad proportions discussed using Sackboy and Restitched as referenc
 The starter figurine has a spherical head, simple neck, one rounded torso, and two segments per arm and leg. It uses a plain white material and has a neutral pose. The earlier point editor remains reachable from the viewer. Front, three-quarter, and side views make it easy to compare the silhouette while the proportions are still open to revision.
 
 Once the appearance is established, the next focus is movement feel and in-game tuning. Explore driving animation transitions from measured movement and physical state. Authored poses and clips can provide the performance, with procedural adjustments added where they help the motion respond. Add anatomy when a specific interaction calls for it.
+
+### In-game limb proportions
+
+Select any of the eight limb segments to adjust size, length, and thickness using sliders or exact percentages. Size scales both dimensions. Length moves the far joint and carries its connected lower segment. Thickness changes the radius while preserving joint spacing. The neutral pose and original defaults remain the starting point.
+
+The viewer saves all eight segments as a local, versioned JSON preset. The game reloads it on launch. This lets the creator tune the figure directly and share the exact result for a later default design decision.

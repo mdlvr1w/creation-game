@@ -1,23 +1,36 @@
 extends Node3D
 
 const Mannequin := preload("res://game/mannequin.gd")
-const FIGURINE_TARGET := Vector3(0.0, 1.31, 0.0)
+const LimbControls := preload("res://game/limb_controls.gd")
+const PROPORTIONS_FILE := "user://mannequin-proportions.json"
 const VIEW_NAMES := ["Front", "Three-quarter", "Side"]
 const VIEW_ANGLES := [0.0, 35.0, 90.0]
 
+var figurine := Mannequin.new()
+var limb_controls := LimbControls.new()
+var stage := MeshInstance3D.new()
+var status := Label.new()
+var highlight := StandardMaterial3D.new()
+var selected_limb: StringName = &""
+var current_view := 1
+var pending_pick := Vector2.INF
 var camera := Camera3D.new()
 var view_buttons: Array[Button] = []
 
 
 func _ready() -> void:
 	add_stage()
-	add_child(Mannequin.new())
+	add_child(figurine)
+	highlight = figurine.material.duplicate()
+	highlight.albedo_color = Color("#c2f1e7")
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.size = 3.65
 	add_child(camera)
 	camera.make_current()
 	add_controls()
+	load_proportions()
 	set_view(1)
+	get_viewport().size_changed.connect(position_limb_controls)
 
 
 func add_stage() -> void:
@@ -30,7 +43,6 @@ func add_stage() -> void:
 	world.environment.ambient_light_energy = 0.26
 	add_child(world)
 
-	var stage := MeshInstance3D.new()
 	var mesh := PlaneMesh.new()
 	mesh.size = Vector2(300.0, 300.0)
 	stage.mesh = mesh
@@ -78,11 +90,121 @@ func add_controls() -> void:
 	editor.pressed.connect(func(): get_tree().change_scene_to_file("res://game/workspace.tscn"))
 	toolbar.add_child(editor)
 
+	var save := Button.new()
+	save.text = "Save proportions"
+	save.custom_minimum_size.y = 32
+	save.pressed.connect(func(): save_proportions())
+	toolbar.add_child(save)
+
+	status.position = Vector2(20, 58)
+	status.text = "Click an arm or leg segment to adjust its proportions."
+	status.add_theme_color_override("font_shadow_color", Color("#20292e"))
+	status.add_theme_constant_override("shadow_offset_y", 1)
+	interface.add_child(status)
+	interface.add_child(limb_controls)
+	limb_controls.factor_changed.connect(set_limb_factor)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		pending_pick = event.position
+
+
+func _physics_process(_delta: float) -> void:
+	if not pending_pick.is_finite():
+		return
+	var origin := camera.project_ray_origin(pending_pick)
+	var end := origin + camera.project_ray_normal(pending_pick) * 30.0
+	pending_pick = Vector2.INF
+	var query := PhysicsRayQueryParameters3D.create(origin, end, 1)
+	query.collide_with_areas = true
+	query.collide_with_bodies = false
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		select_limb(&"")
+	else:
+		select_limb(hit.collider.get_parent().name)
+
+
+func select_limb(limb_name: StringName) -> void:
+	if selected_limb != &"":
+		figurine.limb_meshes[selected_limb].material_override = figurine.material
+	selected_limb = limb_name
+	if selected_limb == &"":
+		limb_controls.hide()
+		return
+	figurine.limb_meshes[selected_limb].material_override = highlight
+	limb_controls.show_limb(selected_limb, figurine.limb_factors[selected_limb])
+	position_limb_controls()
+
+
+func position_limb_controls() -> void:
+	if selected_limb == &"":
+		return
+	limb_controls.reset_size()
+	var anchor := camera.unproject_position(figurine.limb_meshes[selected_limb].global_position)
+	var screen := get_viewport().get_visible_rect().size
+	var size := limb_controls.size
+	var x := anchor.x + 58.0
+	if x + size.x > screen.x - 16.0:
+		x = anchor.x - size.x - 58.0
+	limb_controls.position = Vector2(
+		clampf(x, 16.0, maxf(16.0, screen.x - size.x - 16.0)),
+		clampf(anchor.y - size.y * 0.5, 86.0, maxf(86.0, screen.y - size.y - 16.0))
+	)
+
+
+func set_limb_factor(index: int, factor: float) -> void:
+	if selected_limb == &"":
+		return
+	var factors: Vector3 = figurine.limb_factors[selected_limb]
+	factors[index] = factor
+	figurine.limb_factors[selected_limb] = factors
+	figurine.update_limbs()
+	frame_figurine()
+	status.text = "Unsaved proportions"
+
+
+func save_proportions(path: String = PROPORTIONS_FILE) -> bool:
+	var temp := "%s.%s.%s.tmp" % [path, OS.get_process_id(), Time.get_ticks_usec()]
+	var file := FileAccess.open(temp, FileAccess.WRITE)
+	if file == null:
+		status.text = "Could not save proportions."
+		return false
+	var written := file.store_string(figurine.encode_proportions())
+	file.close()
+	if not written or DirAccess.rename_absolute(temp, path) != OK:
+		DirAccess.remove_absolute(temp)
+		status.text = "Could not save proportions."
+		return false
+	status.text = "Proportions saved. They will load the next time you open the viewer."
+	return true
+
+
+func load_proportions(path: String = PROPORTIONS_FILE) -> bool:
+	if not FileAccess.file_exists(path):
+		return false
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null or not figurine.decode_proportions(file.get_as_text()):
+		status.text = "Could not read saved proportions."
+		return false
+	return true
+
 
 func set_view(index: int) -> void:
-	var angle := deg_to_rad(VIEW_ANGLES[index])
-	var vertical_offset := 0.65 if index == 1 else 0.0
-	camera.position = FIGURINE_TARGET + Vector3(sin(angle) * 6.0, vertical_offset, cos(angle) * 6.0)
-	camera.look_at(FIGURINE_TARGET)
+	current_view = index
+	frame_figurine()
 	for button_index in view_buttons.size():
 		view_buttons[button_index].set_pressed_no_signal(button_index == index)
+	position_limb_controls()
+
+
+func frame_figurine() -> void:
+	stage.position.y = figurine.floor_height - 0.003
+	var bottom := minf(0.0, figurine.floor_height)
+	var target := Vector3(0.0, 1.31 + bottom * 0.5, 0.0)
+	camera.size = 3.65 - bottom
+	var angle := deg_to_rad(VIEW_ANGLES[current_view])
+	var vertical_offset := 0.65 if current_view == 1 else 0.0
+	camera.position = target + Vector3(sin(angle) * 6.0, vertical_offset, cos(angle) * 6.0)
+	camera.look_at(target)
