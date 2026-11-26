@@ -194,3 +194,9 @@ Godot 4.7.2 adds native desktop controller motion support to the pinned build. T
 The body shares a small amount of the controller-driven head turn by rotating around its vertical axis. The local head turn accounts for the body movement. This changes the pose without moving the collider, lifting the feet, or stretching the figure. While airborne, the visual facing blends movement input with current horizontal velocity, giving immediate feedback even when momentum delays reversal.
 
 The preview camera follows the interpolated rendered horizontal position. The figurine and camera now use the same position between physics ticks, which removes horizontal camera lag and reduces uneven motion on screen. The report of blur during play should be checked again in the packaged preview.
+
+### Movement playtest and the Play-Doh feeling
+
+The creator adjusted movement and proportions, jumped around, and watched the figurine respond to controller tilt and midair input. The resulting movement felt enjoyable. Getting to a setup that felt right was enjoyable in itself and matched the Play-Doh analogy that has guided the project.
+
+Playing with the result prompted ideas for higher platforms, something to grab, and objects to interact with. These are openings for future sandbox experiments. The jump pose still feels stiff, and the visual turn on a midair direction change can read as two or three steps. Both remain open for a later animation pass.
