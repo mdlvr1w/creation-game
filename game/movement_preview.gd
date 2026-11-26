@@ -1,6 +1,7 @@
 extends Node3D
 
 const Mannequin := preload("res://game/mannequin.gd")
+const HeadLook := preload("res://game/controller_head_look.gd")
 const Controller := preload("res://game/mannequin_controller.gd")
 const Settings := preload("res://game/movement_settings.gd")
 const TUNING_LABELS := {
@@ -23,18 +24,24 @@ var camera := Camera3D.new()
 var proportions := ""
 var jump_pressed := false
 var tuning_sliders: Dictionary[StringName, HSlider] = {}
-var tuning_numbers: Dictionary[StringName, Label] = {}
+var tuning_fields: Dictionary[StringName, SpinBox] = {}
+var head_look := HeadLook.new()
+var motion_status := Label.new()
 var tuning_status := Label.new()
 
 
 func _ready() -> void:
 	add_child(Stage.new())
 	add_platform(Vector3(0, -0.5, 0), Vector3(180, 1, 16), Color("#404b51"), false)
-	add_platform(Vector3(6, 0.32, 0), Vector3(2.1, 0.64, 2.6), Color("#587e79"), true)
+	for index in 4:
+		var height: float = [0.38, 0.82, 1.40, 2.15][index]
+		var color := Color("#587e79").lightened(index * 0.045)
+		add_platform(Vector3(5.4 + index * 2.05, height * 0.5, 0), Vector3(1.9, height, 2.6), color, true)
 	for index in range(-19, 20):
 		add_floor_marker(index * 2.5)
 
 	add_child(player)
+	add_child(head_look)
 	player.reset()
 	if FileAccess.file_exists(Settings.LOCAL_FILE) and not player.settings.load_from():
 		tuning_status.text = "Could not load saved movement settings."
@@ -60,17 +67,23 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
 		return
-	if event is InputEventKey and event.physical_keycode == KEY_SPACE:
+	if event is InputEventKey and event.physical_keycode == KEY_SPACE and not typing_number():
 		jump_pressed = true
 	elif event is InputEventJoypadButton and event.button_index == JOY_BUTTON_A:
 		jump_pressed = true
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and typing_number():
+		get_viewport().gui_get_focus_owner().release_focus()
+
+
 func _physics_process(delta: float) -> void:
-	var left := Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)
-	var right := Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT)
+	var use_keyboard := not typing_number()
+	var left := use_keyboard and (Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT))
+	var right := use_keyboard and (Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))
 	var direction := float(right) - float(left)
-	var jump_held := Input.is_physical_key_pressed(KEY_SPACE)
+	var jump_held := use_keyboard and Input.is_physical_key_pressed(KEY_SPACE)
 	var analog := 0.0
 	for device in Input.get_connected_joypads():
 		var stick := Controller.stick_intent(Input.get_joy_axis(device, JOY_AXIS_LEFT_X))
@@ -79,14 +92,25 @@ func _physics_process(delta: float) -> void:
 		jump_held = jump_held or Input.is_joy_button_pressed(device, JOY_BUTTON_A)
 	if not left and not right:
 		direction = analog
+	player.motion.head_look_target = head_look.sample()
 	player.step(delta, direction, jump_held, jump_pressed)
 	jump_pressed = false
 	if absf(player.position.x) > 82.0 or player.position.y < -6.0:
 		player.reset()
 
 
+func typing_number() -> bool:
+	return get_viewport().gui_get_focus_owner() is LineEdit
+
+
 func _process(delta: float) -> void:
 	update_camera(1.0 - exp(-delta * 7.0))
+	if head_look.device < 0:
+		motion_status.text = "Controller tilt unavailable"
+	elif head_look.recenter_pending:
+		motion_status.text = "Hold the controller comfortably to center the head"
+	else:
+		motion_status.text = "Tilt the controller to look around"
 
 
 func update_camera(weight: float) -> void:
@@ -140,12 +164,14 @@ func add_controls() -> void:
 	add_button(buttons, "Back to proportions", Callable(self, "return_to_viewer"))
 	add_button(buttons, "Reset position", player.reset)
 	add_button(buttons, "Save movement", save_movement)
+	add_button(buttons, "Center head", head_look.recenter)
 	var hint := Label.new()
 	hint.text = "A / D, ← / → or left stick to move   ·   Space or south face button to jump"
 	panel.add_child(hint)
 	for key: StringName in TUNING_LABELS:
 		add_adjustment(panel, key)
 	panel.add_child(tuning_status)
+	panel.add_child(motion_status)
 
 
 func add_button(row: HBoxContainer, caption: String, action: Callable) -> void:
@@ -178,11 +204,19 @@ func add_adjustment(panel: VBoxContainer, key: StringName) -> void:
 	slider.value = player.settings.values[key]
 	row.add_child(slider)
 	tuning_sliders[key] = slider
-	var value_label := Label.new()
-	value_label.text = "%.1f" % slider.value
-	row.add_child(value_label)
-	tuning_numbers[key] = value_label
+	var field := SpinBox.new()
+	field.custom_minimum_size.x = 78
+	field.min_value = slider.min_value
+	field.max_value = slider.max_value
+	field.step = slider.step
+	field.value = slider.value
+	field.get_line_edit().text_submitted.connect(func(_value: String):
+		field.get_line_edit().release_focus()
+	)
+	row.add_child(field)
+	tuning_fields[key] = field
 	slider.value_changed.connect(adjust_movement.bind(key))
+	field.value_changed.connect(adjust_movement.bind(key))
 
 
 func adjust_movement(value: float, key: StringName) -> void:
@@ -190,7 +224,7 @@ func adjust_movement(value: float, key: StringName) -> void:
 	for setting: StringName in tuning_sliders:
 		var current: float = player.settings.values[setting]
 		tuning_sliders[setting].set_value_no_signal(current)
-		tuning_numbers[setting].text = "%.1f" % current
+		tuning_fields[setting].set_value_no_signal(current)
 	tuning_status.text = "Unsaved movement settings"
 
 

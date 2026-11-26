@@ -8,6 +8,8 @@ var stride := 0.0
 var air_pose := 0.0
 var facing := 1.0
 var lean := 0.0
+var head_look_target := Vector3.ZERO
+var head_look := Vector3.ZERO
 var lean_axes: Array[Vector3] = []
 const UPPER_BODY := [&"Torso", &"Neck", &"Head"]
 
@@ -41,6 +43,12 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 	var body_lean := rotation_about((lean_axes[0] + lean_axes[1]) * 0.5, lean)
 	for part in UPPER_BODY:
 		model.get_node(NodePath(String(part))).transform = body_lean * rest[part]
+
+	head_look = head_look.lerp(head_look_target, 1.0 - exp(-delta * 12.0))
+	var head_rest := rest[&"Head"]
+	var pivot := head_rest.origin - Vector3.UP * head_rest.basis.y.length() * 0.5
+	var turn_head := Basis.from_euler(head_look)
+	model.get_node("Head").transform = body_lean * Transform3D(turn_head, pivot - turn_head * pivot) * head_rest
 
 	var swing := sin(phase) * stride
 	for side in ["Left", "Right"]:

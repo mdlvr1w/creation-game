@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 godot_binary="${GODOT_BIN:-godot}"
-expected_version=4.5.1.stable
+expected_version=4.7.2.stable
 version="$("$godot_binary" --version)"
 if [[ "$version" != "$expected_version".* ]]; then
     printf 'Expected Godot %s, received %s\n' "$expected_version" "$version" >&2

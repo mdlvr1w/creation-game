@@ -1,6 +1,7 @@
 extends SceneTree
 
 const Preview := preload("res://game/movement_preview.tscn")
+const HeadLook := preload("res://game/controller_head_look.gd")
 const Settings := preload("res://game/movement_settings.gd")
 const Controller := preload("res://game/mannequin_controller.gd")
 const Viewer := preload("res://game/mannequin_view.tscn")
@@ -80,6 +81,14 @@ func run() -> void:
 	preview.tuning_sliders[&"max_jump"].value = 3.0
 	check(is_equal_approx(preview.tuning_sliders[&"min_jump"].value, 3.0),
 		"jump sliders keep the minimum and maximum ordered")
+	preview.tuning_fields[&"gravity"].value = 19.7
+	check(is_equal_approx(preview.tuning_sliders[&"gravity"].value, 19.7)
+		and is_equal_approx(player.settings.values.gravity, 19.7), "numeric input updates the slider and controller")
+	var neutral := Vector3(0, -1, 0)
+	check(HeadLook.tilt_pose(neutral, neutral).is_zero_approx(), "neutral grip centers the head")
+	var tilt := HeadLook.tilt_pose(neutral, Vector3(0.4, -0.9, 0.2).normalized())
+	check(tilt.x < 0.0 and tilt.y > 0.0 and tilt.z < 0.0, "controller tilt produces a head rotation")
+
 	await check_air_tuning(preview)
 
 	var settings_file := "user://movement-test-%s.json" % OS.get_process_id()

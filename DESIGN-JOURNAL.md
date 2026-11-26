@@ -182,3 +182,9 @@ Movement settings save to a separate local JSON file and reload the next time th
 ### Gravity and air inertia
 
 The movement preview exposes gravity strength and air inertia. Gravity sets downward acceleration. Air inertia controls how quickly the character changes horizontal velocity while airborne. At maximum inertia it coasts at its current horizontal speed when movement input is released and still responds gradually to steering. Ground acceleration and braking are independent of this setting. Earlier movement saves retain their tuning and get the new defaults of gravity 22 and air inertia 60 percent.
+
+### Precise movement tuning and DualSense tilt
+
+Both save buttons write local presets that load after a full restart. The movement sliders now have synchronized numeric fields and step arrows. The preview uses four boxes of different heights for jump and fall testing.
+
+Godot 4.7.2 adds native desktop controller motion support to the pinned build. The preview uses the controller's gravity estimate to animate head tilt relative to a neutral grip, with a button to recenter. The motion input stays independent of character movement and collision.
