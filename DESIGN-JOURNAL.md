@@ -154,3 +154,9 @@ Once the appearance is established, the next focus is movement feel and in-game 
 Select any of the eight limb segments to adjust size, length, and thickness using sliders or exact percentages. Size scales both dimensions. Length moves the far joint and carries its connected lower segment. Thickness changes the radius while preserving joint spacing. The neutral pose and original defaults remain the starting point.
 
 The viewer saves all eight segments as a local, versioned JSON preset. The game reloads it on launch. This lets the creator tune the figure directly and share the exact result for a later default design decision.
+
+### Torso and paired proportion editing
+
+Feedback from proportion tuning called for torso controls, paired limb edits, and adjusting a limb's vertical position after changing its thickness. The torso now has size, height, and thickness controls. Selecting a limb highlights its counterpart, and each adjustment applies to both sides. A limb's height offset moves its attachment. Lower limb offsets move the shared elbow or knee. Shoulders and hips follow the torso's contour, and length changes continue to carry connected segments.
+
+The saved preset now includes torso dimensions and height offsets. Earlier presets still load, including any asymmetric values. Adjusting a control on a pair applies that value to both sides.

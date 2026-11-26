@@ -4,11 +4,18 @@ extends Node3D
 
 const MIN_FACTOR := 0.55
 const MAX_FACTOR := 1.65
-const DEFAULT_FACTORS := Vector3.ONE
-const FACTOR_KEYS := ["size", "length", "thickness"]
+const MAX_OFFSET := 0.35
+const DEFAULT_FACTORS := Vector4(1, 1, 1, 0)
+const TORSO_CENTER := Vector3(0, 1.19, 0)
+const TORSO_SIZE := Vector3(0.81, 0.78, 0.52)
+const FACTOR_KEYS := ["size", "length", "thickness", "height_offset"]
 
-var limb_factors: Dictionary[StringName, Vector3] = {}
+var limb_factors: Dictionary[StringName, Vector4] = {}
 var limb_meshes: Dictionary[StringName, MeshInstance3D] = {}
+var torso_factors := DEFAULT_FACTORS
+var torso: MeshInstance3D
+var head: MeshInstance3D
+var neck: MeshInstance3D
 var floor_height := 0.0
 var material := StandardMaterial3D.new()
 
@@ -18,13 +25,19 @@ func _ready() -> void:
 	material.roughness = 0.82
 	material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 
-	add_ellipsoid("Head", Vector3(0.0, 2.11, 0.025), Vector3.ONE * 1.06)
-	add_capsule("Neck", Vector3(0.0, 1.48, 0.0), Vector3(0.0, 1.64, 0.0), 0.147)
-	add_ellipsoid("Torso", Vector3(0.0, 1.19, 0.0), Vector3(0.81, 0.78, 0.52))
+	head = add_ellipsoid("Head", Vector3(0.0, 2.11, 0.025), Vector3.ONE * 1.06)
+	neck = add_capsule("Neck", Vector3(0.0, 1.48, 0.0), Vector3(0.0, 1.64, 0.0), 0.147)
+	torso = add_ellipsoid("Torso", TORSO_CENTER, TORSO_SIZE)
 	update_limbs()
 
 
 func update_limbs() -> void:
+	var width := torso_factors.x * torso_factors.z
+	var height := torso_factors.x * torso_factors.y
+	torso.scale = TORSO_SIZE * Vector3(width, height, width)
+	var top_change := (torso.scale.y - TORSO_SIZE.y) * 0.5
+	head.position.y = 2.11 + top_change
+	neck.position.y = 1.56 + top_change
 	floor_height = INF
 	update_side("Left", -1.0)
 	update_side("Right", 1.0)
@@ -34,20 +47,38 @@ func update_side(side: String, sign_x: float) -> void:
 	var shoulder := Vector3(sign_x * 0.37, 1.40, 0.0)
 	var elbow := Vector3(sign_x * 0.54, 1.12, 0.015)
 	var arm_end := Vector3(sign_x * 0.61, 0.88, 0.065)
-	var elbow_joint := update_limb(side + "UpperArm", shoulder, elbow - shoulder, 0.124)
+	var elbow_joint := update_limb(side + "UpperArm", torso_attachment(shoulder, side + "UpperArm"),
+		elbow - shoulder, 0.124, side + "LowerArm")
 	update_limb(side + "LowerArm", elbow_joint, arm_end - elbow, 0.109)
 
 	var hip := Vector3(sign_x * 0.205, 0.94, 0.0)
 	var knee := Vector3(sign_x * 0.24, 0.55, 0.028)
 	var leg_end := Vector3(sign_x * 0.265, 0.143, 0.015)
-	var knee_joint := update_limb(side + "UpperLeg", hip, knee - hip, 0.161)
+	var knee_joint := update_limb(side + "UpperLeg", torso_attachment(hip, side + "UpperLeg"),
+		knee - hip, 0.161, side + "LowerLeg")
 	update_limb(side + "LowerLeg", knee_joint, leg_end - knee, 0.143)
 
 
-func update_limb(limb_name: StringName, start: Vector3, rest_offset: Vector3, rest_radius: float) -> Vector3:
-	var factors := limb_factors.get(limb_name, DEFAULT_FACTORS) as Vector3
+func torso_attachment(rest: Vector3, limb_name: StringName) -> Vector3:
+	var normalized := (rest - TORSO_CENTER) / TORSO_SIZE
+	var factors: Vector4 = limb_factors.get(limb_name, DEFAULT_FACTORS)
+	normalized.y += factors.w * 0.45
+	# Follow the torso's contour to keep the shoulder or hip attached.
+	var rest_y := (rest.y - TORSO_CENTER.y) / TORSO_SIZE.y
+	var reach := absf(normalized.x) / sqrt(0.25 - rest_y * rest_y)
+	normalized.x = signf(normalized.x) * minf(reach, 0.99) * sqrt(0.25 - normalized.y * normalized.y)
+	return TORSO_CENTER + normalized * torso.scale
+
+
+func update_limb(limb_name: StringName, start: Vector3, rest_offset: Vector3,
+		rest_radius: float, lower_limb: StringName = &"") -> Vector3:
+	var factors: Vector4 = limb_factors.get(limb_name, DEFAULT_FACTORS)
 	limb_factors[limb_name] = factors
-	var end := start + rest_offset * factors.x * factors.y
+	var offset := rest_offset * factors.x * factors.y
+	if lower_limb != &"":
+		var lower_factors: Vector4 = limb_factors.get(lower_limb, DEFAULT_FACTORS)
+		offset.y += offset.length() * lower_factors.w
+	var end := start + offset
 	var radius := rest_radius * factors.x * factors.z
 	var length := start.distance_to(end)
 	var height := length + 2.0 * radius
@@ -85,49 +116,71 @@ func update_limb(limb_name: StringName, start: Vector3, rest_offset: Vector3, re
 func encode_proportions() -> String:
 	var values := {}
 	for limb in limb_factors:
-		var factors := limb_factors[limb]
-		values[String(limb)] = {"size": factors.x, "length": factors.y, "thickness": factors.z}
-	return JSON.stringify({"version": 1, "limbs": values}, "\t")
+		values[String(limb)] = encode_factors(limb_factors[limb])
+	return JSON.stringify({"version": 2, "torso": encode_factors(torso_factors), "limbs": values}, "\t")
+
+
+func encode_factors(factors: Vector4) -> Dictionary:
+	var values := {}
+	for index in FACTOR_KEYS.size():
+		values[FACTOR_KEYS[index]] = snappedf(factors[index], 0.01)
+	return values
 
 
 func decode_proportions(contents: String) -> bool:
 	var decoded: Variant = JSON.parse_string(contents)
-	if not decoded is Dictionary or decoded.get("version") != 1:
+	if not decoded is Dictionary or (decoded.get("version") != 1 and decoded.get("version") != 2):
 		return false
+	var legacy: bool = decoded.version == 1
 	var values: Variant = decoded.get("limbs")
 	if not values is Dictionary or values.size() != limb_factors.size():
 		return false
-	var restored: Dictionary[StringName, Vector3] = {}
+	var restored: Dictionary[StringName, Vector4] = {}
 	for limb in limb_factors:
-		var factors: Variant = values.get(String(limb))
-		if not factors is Dictionary or factors.size() != FACTOR_KEYS.size():
+		var validated := decode_factors(values.get(String(limb)), legacy)
+		if not validated.is_finite():
 			return false
-		var validated := Vector3.ZERO
-		for index in FACTOR_KEYS.size():
-			var factor: Variant = factors.get(FACTOR_KEYS[index])
-			if not factor is float or not is_finite(factor) or factor < MIN_FACTOR or factor > MAX_FACTOR:
-				return false
-			validated[index] = factor
 		restored[limb] = validated
+	var restored_torso := DEFAULT_FACTORS if legacy else decode_factors(decoded.get("torso"), false)
+	if not restored_torso.is_finite() or not is_zero_approx(restored_torso.w):
+		return false
 	limb_factors = restored
+	torso_factors = restored_torso
 	update_limbs()
 	return true
 
 
-func add_ellipsoid(part_name: String, center: Vector3, dimensions: Vector3) -> void:
+func decode_factors(values: Variant, legacy: bool) -> Vector4:
+	var count := 3 if legacy else FACTOR_KEYS.size()
+	if not values is Dictionary or values.size() != count:
+		return Vector4.INF
+	var factors := DEFAULT_FACTORS
+	for index in count:
+		var value: Variant = values.get(FACTOR_KEYS[index])
+		var minimum := -MAX_OFFSET if index == 3 else MIN_FACTOR
+		var maximum := MAX_OFFSET if index == 3 else MAX_FACTOR
+		if not value is float or not is_finite(value) or value < minimum or value > maximum:
+			return Vector4.INF
+		factors[index] = value
+	return factors
+
+
+func add_ellipsoid(part_name: String, center: Vector3, dimensions: Vector3) -> MeshInstance3D:
 	var mesh := SphereMesh.new()
 	mesh.radius = 0.5
 	mesh.height = 1.0
 	var part := add_part(part_name, mesh, center)
 	part.scale = dimensions
+	return part
 
 
-func add_capsule(part_name: String, start: Vector3, end: Vector3, radius: float) -> void:
+func add_capsule(part_name: String, start: Vector3, end: Vector3, radius: float) -> MeshInstance3D:
 	var mesh := CapsuleMesh.new()
 	mesh.radius = radius
 	mesh.height = start.distance_to(end) + 2.0 * radius
 	var part := add_part(part_name, mesh, (start + end) * 0.5)
 	part.quaternion = Quaternion(Vector3.UP, (end - start).normalized())
+	return part
 
 
 func add_part(part_name: String, mesh: PrimitiveMesh, center: Vector3) -> MeshInstance3D:

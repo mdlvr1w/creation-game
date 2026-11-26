@@ -97,7 +97,7 @@ func add_controls() -> void:
 	toolbar.add_child(save)
 
 	status.position = Vector2(20, 58)
-	status.text = "Click an arm or leg segment to adjust its proportions."
+	status.text = "Click the torso or a limb segment to adjust proportions."
 	status.add_theme_color_override("font_shadow_color", Color("#20292e"))
 	status.add_theme_constant_override("shadow_offset_y", 1)
 	interface.add_child(status)
@@ -120,21 +120,53 @@ func _physics_process(_delta: float) -> void:
 	query.collide_with_areas = true
 	query.collide_with_bodies = false
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	if hit.is_empty():
+	var torso_distance := ray_torso_distance(origin, end)
+	if torso_distance < INF and (hit.is_empty() or torso_distance < origin.distance_to(hit.position)):
+		select_limb(&"Torso")
+	elif hit.is_empty():
 		select_limb(&"")
 	else:
 		select_limb(hit.collider.get_parent().name)
 
 
+func ray_torso_distance(origin: Vector3, end: Vector3) -> float:
+	# In torso-local space the mesh is a sphere with radius 0.5.
+	var inverse: Transform3D = figurine.torso.global_transform.affine_inverse()
+	var start: Vector3 = inverse * origin
+	var direction: Vector3 = inverse * end - start
+	var nearest := -start.dot(direction) / direction.length_squared()
+	var midpoint := start + nearest * direction
+	var gap := 0.25 - midpoint.length_squared()
+	if gap < 0.0:
+		return INF
+	var fraction := nearest - sqrt(gap / direction.length_squared())
+	return origin.distance_to(end) * fraction if fraction >= 0.0 and fraction <= 1.0 else INF
+
+
+func paired_name(limb_name: StringName) -> StringName:
+	var label := String(limb_name)
+	if label.begins_with("Left"):
+		return StringName("Right" + label.trim_prefix("Left"))
+	return StringName("Left" + label.trim_prefix("Right"))
+
+
+func set_highlight(part_name: StringName, material: Material) -> void:
+	if part_name == &"Torso":
+		figurine.torso.material_override = material
+	elif part_name != &"":
+		figurine.limb_meshes[part_name].material_override = material
+		figurine.limb_meshes[paired_name(part_name)].material_override = material
+
+
 func select_limb(limb_name: StringName) -> void:
-	if selected_limb != &"":
-		figurine.limb_meshes[selected_limb].material_override = figurine.material
+	set_highlight(selected_limb, figurine.material)
 	selected_limb = limb_name
 	if selected_limb == &"":
 		limb_controls.hide()
 		return
-	figurine.limb_meshes[selected_limb].material_override = highlight
-	limb_controls.show_limb(selected_limb, figurine.limb_factors[selected_limb])
+	set_highlight(selected_limb, highlight)
+	var factors: Vector4 = figurine.torso_factors if selected_limb == &"Torso" else figurine.limb_factors[selected_limb]
+	limb_controls.show_part(selected_limb, factors)
 	position_limb_controls()
 
 
@@ -142,7 +174,8 @@ func position_limb_controls() -> void:
 	if selected_limb == &"":
 		return
 	limb_controls.reset_size()
-	var anchor := camera.unproject_position(figurine.limb_meshes[selected_limb].global_position)
+	var part: MeshInstance3D = figurine.torso if selected_limb == &"Torso" else figurine.limb_meshes[selected_limb]
+	var anchor := camera.unproject_position(part.global_position)
 	var screen := get_viewport().get_visible_rect().size
 	var size := limb_controls.size
 	var x := anchor.x + 58.0
@@ -157,9 +190,16 @@ func position_limb_controls() -> void:
 func set_limb_factor(index: int, factor: float) -> void:
 	if selected_limb == &"":
 		return
-	var factors: Vector3 = figurine.limb_factors[selected_limb]
-	factors[index] = factor
-	figurine.limb_factors[selected_limb] = factors
+	if selected_limb == &"Torso":
+		figurine.torso_factors[index] = factor
+	else:
+		var opposite := paired_name(selected_limb)
+		var factors: Vector4 = figurine.limb_factors[selected_limb]
+		var opposite_factors: Vector4 = figurine.limb_factors[opposite]
+		factors[index] = factor
+		opposite_factors[index] = factor
+		figurine.limb_factors[selected_limb] = factors
+		figurine.limb_factors[opposite] = opposite_factors
 	figurine.update_limbs()
 	frame_figurine()
 	status.text = "Unsaved proportions"
@@ -202,8 +242,9 @@ func set_view(index: int) -> void:
 func frame_figurine() -> void:
 	stage.position.y = figurine.floor_height - 0.003
 	var bottom := minf(0.0, figurine.floor_height)
-	var target := Vector3(0.0, 1.31 + bottom * 0.5, 0.0)
-	camera.size = 3.65 - bottom
+	var top_change := maxf(0.0, figurine.head.position.y - 2.11)
+	var target := Vector3(0.0, 1.31 + (bottom + top_change) * 0.5, 0.0)
+	camera.size = 3.65 + top_change - bottom
 	var angle := deg_to_rad(VIEW_ANGLES[current_view])
 	var vertical_offset := 0.65 if current_view == 1 else 0.0
 	camera.position = target + Vector3(sin(angle) * 6.0, vertical_offset, cos(angle) * 6.0)

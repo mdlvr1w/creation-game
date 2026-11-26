@@ -3,14 +3,16 @@ extends PanelContainer
 signal factor_changed(index: int, factor: float)
 
 const Mannequin := preload("res://game/mannequin.gd")
-const LABELS := ["Size", "Length", "Thickness"]
+const LABELS := ["Size", "Length", "Thickness", "Height offset"]
 const HELP := [
 	"Scales the length and thickness together.",
 	"Changes the distance between the joints.",
 	"Changes the width without moving the joints.",
+	"Raises or lowers the attachment while keeping it connected.",
 ]
 
 var title := Label.new()
+var labels: Array[Label] = []
 var sliders: Array[HSlider] = []
 var fields: Array[SpinBox] = []
 
@@ -43,6 +45,7 @@ func _ready() -> void:
 		label.tooltip_text = HELP[index]
 		label.mouse_filter = Control.MOUSE_FILTER_PASS
 		grid.add_child(label)
+		labels.append(label)
 
 		var slider := HSlider.new()
 		slider.tooltip_text = HELP[index]
@@ -58,16 +61,24 @@ func _ready() -> void:
 		fields.append(field)
 
 		for control: Range in [slider, field]:
-			control.min_value = Mannequin.MIN_FACTOR * 100
-			control.max_value = Mannequin.MAX_FACTOR * 100
+			control.min_value = (-Mannequin.MAX_OFFSET if index == 3 else Mannequin.MIN_FACTOR) * 100
+			control.max_value = (Mannequin.MAX_OFFSET if index == 3 else Mannequin.MAX_FACTOR) * 100
 			control.step = 1
-			control.value = 100
+			control.value = 0 if index == 3 else 100
 			control.value_changed.connect(change_factor.bind(index))
 	hide()
 
 
-func show_limb(limb_name: StringName, factors: Vector3) -> void:
-	title.text = String(limb_name).capitalize()
+func show_part(part_name: StringName, factors: Vector4) -> void:
+	var is_torso := part_name == &"Torso"
+	var pair_name := String(part_name).trim_prefix("Left").trim_prefix("Right")
+	title.text = "Torso" if is_torso else pair_name.capitalize() + " Pair"
+	labels[1].text = "Height" if is_torso else "Length"
+	var length_help := "Changes the torso's height." if is_torso else HELP[1]
+	labels[1].tooltip_text = length_help
+	sliders[1].tooltip_text = length_help
+	for control: Control in [labels[3], sliders[3], fields[3]]:
+		control.visible = not is_torso
 	for index in LABELS.size():
 		sliders[index].set_value_no_signal(factors[index] * 100)
 		fields[index].set_value_no_signal(factors[index] * 100)
