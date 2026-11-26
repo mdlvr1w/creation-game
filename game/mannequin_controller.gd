@@ -6,8 +6,8 @@ const GrabCube := preload("res://game/grabbable_cube.gd")
 
 const Settings := preload("res://game/movement_settings.gd")
 const STICK_DEAD_ZONE := 0.18
-const GRAB_GAP := 0.46
-const GRAB_RANGE := 0.63
+const GRAB_GAP := 0.59
+const GRAB_RANGE := 0.83
 
 var held_cube: GrabCube
 var grip_side := 0.0
@@ -31,6 +31,8 @@ func _ready() -> void:
 	add_child(collider)
 	add_child(motion)
 	floor_snap_length = 0.15
+	collision_mask = 3
+	platform_floor_layers = 1
 
 
 static func stick_intent(axis: float) -> float:
@@ -97,7 +99,8 @@ func step(delta: float, direction: float, jump_held: bool, jump_pressed := false
 
 
 func pull_cube(target_speed: float) -> void:
-	var hold_x := global_position.x + grip_side * (GrabCube.HALF_SIZE + GRAB_GAP)
+	var lean_offset := clampf(sin(motion.lean) * 0.38, -0.09, 0.09)
+	var hold_x := global_position.x + grip_side * (GrabCube.HALF_SIZE + GRAB_GAP + lean_offset)
 	var displacement := hold_x - held_cube.global_position.x
 	var relative_speed := lerpf(velocity.x, target_speed, 0.75) - held_cube.linear_velocity.x
 	var force := clampf(held_cube.mass * (displacement * 100.0 + relative_speed * 19.0), -150.0, 150.0)

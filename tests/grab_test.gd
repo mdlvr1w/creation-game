@@ -22,13 +22,14 @@ func run() -> void:
 
 	await frames(preview, 70, -1.0, false)
 	check(cube.position.x < cube.start.x - 0.4, "walking into the cube pushes it")
-	await frames(preview, 20, 0.0, true)
+	await frames(preview, 55, 0.0, true)
 	check(player.held_cube == cube and player.grip_side < 0.0, "the nearby cube is grabbed on its near side")
 	check(player.motion.rotation.y < -1.45, "grabbing turns the body toward the cube")
 
 	var upper: MeshInstance3D = player.motion.model.limb_meshes[&"LeftUpperArm"]
 	var lower: MeshInstance3D = player.motion.model.limb_meshes[&"LeftLowerArm"]
 	check(joint(upper, 1.0).is_equal_approx(joint(lower, -1.0)), "reaching keeps the elbow connected")
+	check(upper.basis.y.dot(lower.basis.y) > 0.2, "the forearm extends beyond a right-angle bend")
 	var mesh := lower.mesh as CapsuleMesh
 	var tip_x := joint(lower, 1.0).x - mesh.radius
 	check(absf(tip_x - (cube.position.x + cube.HALF_SIZE)) < 0.14, "forearm reaches the face of the cube")
@@ -39,8 +40,14 @@ func run() -> void:
 	check(player.motion.rotation.y < -1.45, "backward movement keeps the body facing the cube")
 	check(absf(player.velocity.x) < player.settings.values.max_speed - 0.5, "weight reduces held movement speed")
 
+	var full_pull_lean: float = player.motion.lean
+	check(full_pull_lean < -0.1, "the body leans back under a full pull")
+	await frames(preview, 32, 0.25, true)
+	check(player.motion.lean < -0.015 and player.motion.lean > full_pull_lean + 0.05,
+		"a slow pull uses a lighter backward lean")
 	initial_x = cube.position.x
 	await frames(preview, 60, -1.0, true)
+	check(player.motion.lean > 0.1, "the body leans forward while pushing")
 	check(cube.position.x < initial_x - 0.4, "walking toward the held cube pushes it")
 
 	for side in ["Left", "Right"]:
@@ -52,9 +59,9 @@ func run() -> void:
 	await frames(preview, 10, 0.0, false)
 	check(player.held_cube == null and player.motion.grip_cube == null, "releasing frees the cube")
 	preview.reset_sandbox()
-	cube.position = Vector3(1.17, cube.HALF_SIZE + 0.02, 0)
+	cube.position = Vector3(1.46, cube.HALF_SIZE + 0.02, 0)
 	await frames(preview, 21, 0.0, true)
-	check(player.held_cube == cube and player.motion.rotation.y > 1.45, "a cube on the right turns the body right")
+	check(player.held_cube == cube and player.motion.rotation.y > 1.45, "a cube farther away can be grabbed on the right")
 	preview.reset_sandbox()
 	check(player.held_cube == null, "reset releases the cube")
 

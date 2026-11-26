@@ -206,3 +206,7 @@ Playing with the result prompted ideas for higher platforms, something to grab, 
 The movement preview adds a movable orange cube. Walking into it pushes it. Holding R1 or E near it makes the figure face the cube and reach for it with both forearms. The reach bends the elbows while preserving the limb lengths. While holding, movement toward the cube pushes it and movement away pulls it while the figure walks backward. The hold transfers force to the cube and its mass reduces player speed. Releasing restores the ordinary controls.
 
 The first test uses an upright cube constrained to the movement plane and focuses on grounded push and pull. Jumping is available after release. Reset positions restores both bodies for a fresh experiment.
+
+### Grab reach and exertion
+
+The grab playtest called for starting farther from the cube, straighter arms during the hold, and clearer exertion in the pose. The grab range and resting gap are larger. The gap adjusts slightly as the body leans so the forearms keep reaching for the cube. The figurine leans forward when pushing and leans back when pulling, with the amount driven by how hard the player steers. The existing forward lean setting sets the scale.

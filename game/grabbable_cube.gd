@@ -7,6 +7,7 @@ var start := Vector3(-3.7, HALF_SIZE + 0.02, 0)
 
 func _ready() -> void:
 	mass = 3.0
+	collision_layer = 2
 	axis_lock_linear_z = true
 	lock_rotation = true
 	physics_material_override = PhysicsMaterial.new()

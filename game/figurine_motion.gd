@@ -57,8 +57,11 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 	rotation.y = lerp_angle(rotation.y, yaw, 1.0 - exp(-delta * 17.0))
 
 	var target_lean := deg_to_rad(max_lean) * pow(pace, 0.72) if grounded else 0.0
-	if grabbing:
-		target_lean *= 0.35 * signf(velocity.x * grip_side)
+	if grabbing and grounded:
+		# Input contributes effort even before a heavy object starts to move.
+		var effort := direction * grip_side
+		var load := 0.82 * absf(effort) + 0.18 * pace
+		target_lean = deg_to_rad(max_lean) * load * signf(effort)
 	lean = lerpf(lean, target_lean, 1.0 - exp(-delta * 10.0))
 	var body_lean := rotation_about((lean_axes[0] + lean_axes[1]) * 0.5, lean)
 	for part in UPPER_BODY:
@@ -97,7 +100,7 @@ func reach_for_cube(side: String, body_pose: Transform3D) -> void:
 	# The rounded end of the forearm touches the near face of the cube.
 	var contact := reach_cube.global_position
 	contact.x -= grip_side * (GrabCube.HALF_SIZE + lower_mesh.radius)
-	contact.y += 0.49
+	contact.y += 0.53
 	contact.z -= grip_side * clampf(upper_rest.origin.x, -0.36, 0.36)
 	var relaxed_tip := lower.position + lower.basis.y * lower_span * 0.5
 	var target: Vector3 = relaxed_tip.lerp(model.to_local(contact), grip_blend)
