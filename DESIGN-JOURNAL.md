@@ -110,3 +110,13 @@ The project owner built a basic stick figure with little effort. Placing and con
 - **Placement precision.** Preserve free placement and explore optional grid snapping, horizontal and vertical alignment guides relative to existing points, and temporary snapping through a modifier. Guides should make the active alignment clear.
 
 The proposed next focus is making articulated construction natural, precise, and enjoyable before exploring locomotion. These observations guide the next design discussion. The controls, precedence between snap targets, and order of implementation are open.
+
+### Building directly from the figure
+
+Explore making the creation itself the interface. A selected point could show directional handles. Dragging one would preview a new point along that axis and its connection to the source. Releasing would place and connect the point in one gesture. Selection could then move to the new point, so the creator can immediately extend the structure again. Alignment guides, grid snapping, and numerical controls can complement extrusion when placing or adjusting points elsewhere.
+
+The proposed interaction model keeps an idle object clear of controls, highlights it subtly on hover, and reveals a few relevant handles on selection. A contextual menu could offer naming, parenting, properties, and precise configuration. During a drag, the workspace could show only feedback relevant to the gesture, such as length or angle. Toolbars can support operations that apply to the whole workspace.
+
+Points and connections could have optional names, such as Elbow and Forearm, to help creators identify them when inspecting larger structures. Names describe the creator's intent. Parenting and other relationships are configured independently.
+
+A small next experiment could test the direct interaction loop by building a head, neck, and spine with repeated extrusion. Handle positioning, how selection transfers without crowding nearby points, and when naming should enter the prototype remain open.
