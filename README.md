@@ -15,7 +15,7 @@ After building, run `dist/linux/workspace.x86_64` on Linux or `dist/windows/work
 2. In **Connect**, click two points to join them. Repeat for each link.
 3. In **Swing link**, click a pivot, then drag a connected point to swing it while keeping that link's length. Right-click to pick a different pivot. This is a posing tool.
 4. In **Place & move**, drag a selected point's arrow to grow a straight link or drag the ring to grow in any direction. Release to place and connect the new point. The handles follow it so you can keep building. Escape cancels the current pull.
-5. Enable **Mirror extrusion** to preview and place matching links across the vertical centerline. Start on the line or at a point with a matching opposite point. While enabled, placing a point close to the line snaps it onto the line.
+5. Hover over any handle for a short explanation. Click the **mirror handle** (two arrows pointing away from a line) beside a selected point, then drag an arrow or the ring. The next pull mirrors across a vertical line through that point. Pull sideways to see both previews.
 6. Use **Save** to write a `.figure.json` file and **Open** to continue working on it.
 
 ## Build and test

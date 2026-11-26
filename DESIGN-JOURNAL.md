@@ -132,3 +132,7 @@ Explore both directional and unrestricted extrusion in the same direct manipulat
 Selected points offer four directional pulls and one free pull in the existing placement tool. A pull previews a link and its length. Release creates the link and selects its endpoint. Escape cancels the gesture. Handles yield to nearby points so branching remains possible.
 
 Mirror extrusion is a workspace toggle with a fixed vertical centerline for this build. New placements near the line snap to it while the toggle is active. A centered source can branch to both sides, and an off-center source needs a matching point across the line. Mirroring applies to extrusion as it happens. The figure format and its existing point and link semantics are unchanged.
+
+### Contextual mirroring and hover help
+
+Playtest feedback showed that the workspace mirror toggle and fixed centerline were hard to connect to the selected point. A missing opposite point could prevent extrusion outright. Mirroring now lives on a selected point's handles. Clicking it arms the next pull around that point, and a sideways pull grows two links from the same source. The arrows, ring, and mirror handle explain their actions on hover.

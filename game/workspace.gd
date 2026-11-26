@@ -3,7 +3,7 @@ extends Node3D
 const Figure := preload("res://game/figure.gd")
 const ExtrusionHandles := preload("res://game/extrusion_handles.gd")
 const MIRROR_TOLERANCE := 0.001
-const CENTER_SNAP := 0.065
+const MIN_LINK_LENGTH := 0.065
 const MIN_DRAG := 6.0
 const PREVIEW := Color("#469486")
 const INK := Color("#222827")
@@ -17,7 +17,6 @@ var camera := Camera3D.new()
 var drawing := MeshInstance3D.new()
 var handles := ExtrusionHandles.new()
 var toolbar := HBoxContainer.new()
-var mirror_button := CheckButton.new()
 var status := Label.new()
 var connect_button: Button
 var save_dialog: FileDialog
@@ -35,7 +34,7 @@ var hovered_point := -1
 var extrusion_handle := -1
 var extrusion_start := Vector2.ZERO
 var extrusion_target := Vector3.ZERO
-var mirror_source := -1
+var mirror_next := false
 var preview_visible := false
 
 
@@ -80,10 +79,6 @@ func build_interface() -> void:
 	add_button(toolbar, "Open…", request_open)
 	add_button(toolbar, "Save", request_save)
 	add_button(toolbar, "Save as…", show_save_dialog)
-	mirror_button.text = "Mirror extrusion"
-	mirror_button.tooltip_text = "Reflect new links across the vertical centerline."
-	mirror_button.toggled.connect(func(_enabled: bool): redraw())
-	toolbar.add_child(mirror_button)
 	get_viewport().size_changed.connect(redraw)
 
 	status.position = Vector2(20, 58)
@@ -139,6 +134,7 @@ func select_pivot_mode() -> void:
 
 
 func update_tools() -> void:
+	mirror_next = false
 	clear_extrusion()
 	hovered_point = -1
 	drag_point = -1
@@ -171,6 +167,20 @@ func _input(event: InputEvent) -> void:
 		drag_point = -1
 		redraw()
 
+	elif event is InputEventMouseMotion and tool == Tool.PLACE and drag_point < 0:
+		update_hover(event.position)
+
+
+func update_hover(cursor: Vector2) -> void:
+	var over_interface := (toolbar.get_global_rect().has_point(cursor)
+		or save_dialog.visible or open_dialog.visible)
+	var point := -1 if over_interface else pick_point(cursor)
+	var handle := -1 if over_interface or point >= 0 else handles.hit_test(cursor)
+	if point != hovered_point or handle != handles.hovered:
+		hovered_point = point
+		handles.hovered = handle
+		redraw()
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and drag_point >= 0:
@@ -185,13 +195,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		destination.z = figure.points[drag_point].z
 		figure.points[drag_point] = destination
 		redraw()
-	elif event is InputEventMouseMotion and tool == Tool.PLACE:
-		var point := pick_point(event.position)
-		var handle := -1 if point >= 0 else handles.hit_test(event.position)
-		if point != hovered_point or handle != handles.hovered:
-			hovered_point = point
-			handles.hovered = handle
-			redraw()
 	elif event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			handle_click(event.position)
@@ -199,6 +202,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			selected_point = -1
 			pivot_point = -1
 			handles.hovered = -1
+			mirror_next = false
 			redraw()
 	elif event.is_action_pressed("ui_cancel"):
 		select_place_mode()
@@ -208,6 +212,12 @@ func handle_click(screen_position: Vector2) -> void:
 	var hit := pick_point(screen_position)
 	if tool == Tool.PLACE and hit < 0:
 		var handle := handles.hit_test(screen_position)
+		if handle == ExtrusionHandles.MIRROR_HANDLE:
+			mirror_next = not mirror_next
+			set_status("Mirror on for the next pull. This point is the center." if mirror_next
+				else "Mirror off. Pull a handle to add a link.")
+			redraw()
+			return
 		if handle >= 0:
 			begin_extrusion(handle, screen_position)
 			return
@@ -240,23 +250,15 @@ func handle_click(screen_position: Vector2) -> void:
 	else:
 		if hit < 0:
 			hit = figure.points.size()
-			var position := point_on_plane(screen_position)
-			if mirror_button.button_pressed and absf(position.x) <= CENTER_SNAP:
-				position.x = 0.0
-			figure.points.append(position)
+			figure.points.append(point_on_plane(screen_position))
+		if hit != selected_point:
+			mirror_next = false
 		selected_point = hit
 		drag_point = hit
 	redraw()
 
 
 func begin_extrusion(handle: int, cursor: Vector2) -> void:
-	var source := figure.points[selected_point]
-	if mirror_button.button_pressed:
-		mirror_source = find_point(reflect_point(source))
-		if mirror_source < 0:
-			set_status("Mirror extrusion needs a source on the centerline or a matching point across it.")
-			return
-
 	extrusion_handle = handle
 	extrusion_start = cursor
 	drag_point = -1
@@ -273,14 +275,12 @@ func update_extrusion(cursor: Vector2) -> void:
 		direction.y = -direction.y
 		displacement = direction * maxf(0.0, displacement.dot(direction))
 	extrusion_target = source + Vector3(displacement.x, displacement.y, 0.0)
-	if mirror_source >= 0 and absf(extrusion_target.x) <= CENTER_SNAP:
-		extrusion_target.x = 0.0
 	preview_visible = (cursor.distance_to(extrusion_start) >= MIN_DRAG
-		and source.distance_to(extrusion_target) > CENTER_SNAP
+		and source.distance_to(extrusion_target) > MIN_LINK_LENGTH
 		and get_viewport().get_visible_rect().has_point(cursor)
 		and not toolbar.get_global_rect().has_point(cursor))
 	if preview_visible:
-		var description := "Mirrored link" if mirror_source >= 0 else "Link"
+		var description := "Mirrored link" if mirror_next else "Link"
 		set_status("%s length %.2f   ·   Escape cancels" % [description, source.distance_to(extrusion_target)])
 	redraw()
 
@@ -291,10 +291,9 @@ func finish_extrusion(cursor: Vector2) -> void:
 		cancel_extrusion()
 		return
 	var endpoint := append_link(selected_point, extrusion_target)
-	if mirror_source >= 0:
-		var reflected := reflect_point(extrusion_target)
-		if not reflected.is_equal_approx(figure.points[mirror_source]):
-			append_link(mirror_source, reflected)
+	if mirror_next:
+		append_link(selected_point, reflect_point(extrusion_target))
+	mirror_next = false
 	selected_point = endpoint
 	hovered_point = -1
 	clear_extrusion()
@@ -312,7 +311,7 @@ func append_link(source: int, position: Vector3) -> int:
 
 
 func reflect_point(point: Vector3) -> Vector3:
-	return Vector3(-point.x, point.y, point.z)
+	return Vector3(2.0 * figure.points[selected_point].x - point.x, point.y, point.z)
 
 
 func find_point(position: Vector3) -> int:
@@ -324,7 +323,6 @@ func find_point(position: Vector3) -> int:
 
 func clear_extrusion() -> void:
 	extrusion_handle = -1
-	mirror_source = -1
 	preview_visible = false
 	handles.hovered = -1
 
@@ -339,6 +337,7 @@ func remove_selection() -> void:
 	if selected_point < 0:
 		set_status("Select a point before deleting it.")
 		return
+	mirror_next = false
 	clear_extrusion()
 	hovered_point = -1
 	figure.remove_point(selected_point)
@@ -368,12 +367,17 @@ func redraw() -> void:
 	var mesh := ImmediateMesh.new()
 	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
 	draw_line(mesh, Vector3(-100, FLOOR_Y, 0), Vector3(100, FLOOR_Y, 0), 0.023, INK)
-	if mirror_button.button_pressed:
-		draw_line(mesh, Vector3(0, -20, 0), Vector3(0, 20, 0), 0.014, Color("#a5c2b8"))
+	if mirror_next and selected_point >= 0:
+		var center := figure.points[selected_point]
+		var guide := Vector3(0, 0.65, 0)
+		draw_line(mesh, center - guide, center + guide, 0.014, Color("#a5c2b8"))
 	if preview_visible:
-		draw_preview(mesh, figure.points[selected_point], extrusion_target)
-		if mirror_source >= 0:
-			draw_preview(mesh, figure.points[mirror_source], reflect_point(extrusion_target))
+		var source := figure.points[selected_point]
+		draw_preview(mesh, source, extrusion_target)
+		if mirror_next:
+			var reflected := reflect_point(extrusion_target)
+			if not reflected.is_equal_approx(extrusion_target):
+				draw_preview(mesh, source, reflected)
 	for link in figure.links:
 		draw_line(mesh, figure.points[link.x], figure.points[link.y], 0.032, INK)
 	for index in figure.points.size():
@@ -392,7 +396,8 @@ func update_handles() -> void:
 			# A nearby point always remains available for selection.
 			if pick_point(handles.position_for(index)) < 0:
 				handles.visible_handles.append(index)
-	handles.queue_redraw()
+	handles.mirror_armed = mirror_next
+	handles.refresh()
 
 
 func draw_preview(mesh: ImmediateMesh, source: Vector3, target: Vector3) -> void:
@@ -474,6 +479,7 @@ func open_figure(path: String) -> void:
 	if file == null or not figure.decode(file.get_as_text()):
 		set_status("Could not open that figure. Your current figure is still here.")
 		return
+	mirror_next = false
 	clear_extrusion()
 	hovered_point = -1
 	current_file = path

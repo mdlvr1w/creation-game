@@ -86,49 +86,56 @@ func test_extrusion(workspace) -> void:
 	check(is_equal_approx(workspace.figure.points[0].x, workspace.figure.points[1].x),
 		"directional extrusion keeps horizontal alignment")
 
-	workspace.mirror_button.button_pressed = true
-	var free_handle: Vector2 = workspace.handles.position_for(4)
-	var diagonal: Vector2 = workspace.handles.center + Vector2(85, -60)
-	mouse_button(free_handle, true)
-	move_mouse(diagonal)
-	mouse_button(diagonal, false)
-	check(workspace.figure.points.size() == 4, "mirrored free extrusion adds two points")
-	if workspace.figure.points.size() != 4:
-		return
-	var primary: Vector3 = workspace.figure.points[2]
-	var mirrored: Vector3 = workspace.figure.points[3]
-	check(primary.is_equal_approx(workspace.point_on_plane(diagonal)), "free extrusion follows both axes")
-	check(mirrored.is_equal_approx(Vector3(-primary.x, primary.y, primary.z)),
-		"mirrored point is opposite across the centerline")
-	check(workspace.figure.links.size() == 3, "both sides connect to the center point")
+	# Use an off-center source with no opposite point.
+	click_at(center + Vector2(160, 90))
+	var source: Vector3 = workspace.figure.points[2]
+	var mirror_handle: Vector2 = workspace.handles.position_for(5)
+	move_mouse(mirror_handle)
+	check(workspace.handles.hint.visible and workspace.handles.hint.text.contains("mirror"),
+		"mirror handle explains its action on hover")
+	click_at(mirror_handle)
+	check(workspace.mirror_next, "selected point arms mirroring")
 
-	var up_arrow: Vector2 = workspace.handles.position_for(3)
-	var continued: Vector2 = workspace.handles.center + Vector2(0, -95)
-	mouse_button(up_arrow, true)
-	move_mouse(continued)
-	mouse_button(continued, false)
-	check(workspace.figure.points.size() == 6 and workspace.figure.links.size() == 5,
-		"continued mirrored extrusion connects from both corresponding sources")
+	var right_arrow: Vector2 = workspace.handles.position_for(0)
+	move_mouse(right_arrow)
+	check(workspace.handles.hint.visible and workspace.handles.hint.text.contains("right"),
+		"directional handle explains its action on hover")
+	var right_end := right_arrow + Vector2(65, 10)
+	mouse_button(right_arrow, true)
+	move_mouse(right_end)
+	check(workspace.preview_visible and not workspace.handles.hint.visible,
+		"mirrored arrow stays usable and hides hover help during the drag")
+	mouse_button(right_end, false)
+	check(workspace.figure.points.size() == 5, "mirrored arrow adds two points from an off-center source")
+	if workspace.figure.points.size() != 5:
+		return
+	var primary: Vector3 = workspace.figure.points[3]
+	var mirrored: Vector3 = workspace.figure.points[4]
+	check((primary - source).is_equal_approx(source - mirrored), "both links extend from the selected point")
+	check(workspace.figure.links.has(Vector2i(2, 3)) and workspace.figure.links.has(Vector2i(2, 4)),
+		"both new endpoints are linked to the source")
+	check(not workspace.mirror_next and workspace.selected_point == 3,
+		"mirroring is consumed and selection follows the primary endpoint")
+
+	var free_handle: Vector2 = workspace.handles.position_for(4)
+	move_mouse(free_handle)
+	check(workspace.handles.hint.visible and workspace.handles.hint.text.contains("any direction"),
+		"free handle explains its action on hover")
+	var free_target := free_handle + Vector2(55, -50)
+	mouse_button(free_handle, true)
+	move_mouse(free_target)
+	mouse_button(free_target, false)
+	check(workspace.figure.points.size() == 6, "the next pull is free and unmirrored")
 
 	click_at(center)
-	var center_arrow: Vector2 = workspace.handles.position_for(3)
-	var center_target: Vector2 = workspace.handles.center + Vector2(0, -110)
-	mouse_button(center_arrow, true)
-	move_mouse(center_target)
-	mouse_button(center_target, false)
-	check(workspace.figure.points.size() == 7 and workspace.figure.links.size() == 6,
-		"extrusion along the centerline adds one point and one link")
-
-
-	click_at(center + Vector2(175, 110))
-	var unmatched_handle: Vector2 = workspace.handles.position_for(0)
-	mouse_button(unmatched_handle, true)
-	move_mouse(unmatched_handle + Vector2(80, 0))
-	mouse_button(unmatched_handle + Vector2(80, 0), false)
-	check(workspace.figure.points.size() == 8 and workspace.figure.links.size() == 6,
-		"mirroring requires a matching source")
-	click_at(center + Vector2(4, 180))
-	check(is_zero_approx(workspace.figure.points.back().x), "placement near the centerline snaps to it")
+	click_at(workspace.handles.position_for(5))
+	var up_arrow: Vector2 = workspace.handles.position_for(3)
+	var up_end := up_arrow + Vector2(0, -75)
+	mouse_button(up_arrow, true)
+	move_mouse(up_end)
+	mouse_button(up_end, false)
+	check(workspace.figure.points.size() == 7 and workspace.figure.links.size() == 5,
+		"a pull along the mirror axis creates a single link")
 
 
 func click_at(position: Vector2) -> void:
