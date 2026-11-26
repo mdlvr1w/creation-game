@@ -222,3 +222,7 @@ A focused next experiment could let the cube rotate in the side-scrolling plane 
 The cube now rotates in the side-scrolling plane. A grip stores a point and face in the cube's own coordinates so the forearms follow the face as it tips. The hold applies force at that point. The grabbed edge can lift first, and a released cube retains its rotation. The figure can jump with the cube or catch its side after takeoff. Mass lowers a held jump, and the vertical grip force also acts back on the airborne figure.
 
 The preview adds a low step to the left of the cube. Pulling from the step while jumping can haul the cube up. Side acquisition is the focus of this experiment. Crouching to grab from above and reliably maintaining contact through a full tumble remain future work.
+
+### Pose for a grab from above
+
+Holding the grab button is the only input needed when the figurine stands on a reachable object. The figurine bends its knees, tilts its torso forward, and reaches down with both arms to catch the surface. The crouch is part of the grab pose. Once the contact is made, the grip follows the same points as the object moves or rotates. Riding a rolling object and catching from below remain directions to explore.
