@@ -178,3 +178,7 @@ The movement preview adds side-on walking, stopping, and jumping on a floor with
 The movement preview accepts the controller's left stick and bottom face button alongside keyboard movement and mouse tuning. Stick tilt interpolates between adjustable minimum and maximum walking speeds. Releasing jump early limits the remaining upward velocity, while holding jump allows the full launch. Tap and hold strengths can be tuned independently. The upper body leans from the hips based on actual ground speed, with an adjustable maximum angle.
 
 Movement settings save to a separate local JSON file and reload the next time the preview opens. The first airborne animation remains available for later refinement.
+
+### Gravity and air inertia
+
+The movement preview exposes gravity strength and air inertia. Gravity sets downward acceleration. Air inertia controls how quickly the character changes horizontal velocity while airborne. At maximum inertia it coasts at its current horizontal speed when movement input is released and still responds gradually to steering. Ground acceleration and braking are independent of this setting. Earlier movement saves retain their tuning and get the new defaults of gravity 22 and air inertia 60 percent.

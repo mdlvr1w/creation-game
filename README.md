@@ -19,7 +19,7 @@ Click the head, neck, torso, or any arm or leg segment to adjust it. The control
 
 Choose **Try movement** in the figurine viewer. Move with **A/D**, **←/→**, or a controller's **left stick**. Tap or hold **Space** or the controller's **bottom face button** to jump. The keyboard uses full movement speed. The stick blends between the minimum walking speed just beyond its dead zone and the maximum at full tilt.
 
-Adjust **Min walk speed**, **Max walk speed**, **Tap jump strength**, **Hold jump strength**, and **Forward lean** with the mouse while testing. **Save movement** writes the current settings to `user://mannequin-movement.json` for the next preview. **Back to proportions** returns to the proportions you were viewing, including unsaved changes.
+Adjust **Min walk speed**, **Max walk speed**, **Tap jump strength**, **Hold jump strength**, **Forward lean**, **Gravity strength**, and **Air inertia** with the mouse while testing. Higher gravity pulls downward faster. Higher air inertia carries more momentum and slows midair turns. At 100%, releasing movement preserves horizontal momentum in the air and steering still responds. **Save movement** writes the current settings to `user://mannequin-movement.json` for the next preview. **Back to proportions** returns to the proportions you were viewing, including unsaved changes.
 
 The viewer starts from the project preset in `game/default_proportions.json`. A local saved preset takes precedence. Movement uses the displayed proportions and blends the limbs according to horizontal speed and whether the character is on the ground.
 

@@ -80,12 +80,25 @@ func run() -> void:
 	preview.tuning_sliders[&"max_jump"].value = 3.0
 	check(is_equal_approx(preview.tuning_sliders[&"min_jump"].value, 3.0),
 		"jump sliders keep the minimum and maximum ordered")
+	await check_air_tuning(preview)
+
 	var settings_file := "user://movement-test-%s.json" % OS.get_process_id()
 	check(player.settings.save_to(settings_file), "movement settings save")
 	var restored := Settings.new()
 	check(restored.load_from(settings_file), "movement settings reload")
 	for key: StringName in Settings.LIMITS:
 		check(is_equal_approx(restored.values[key], player.settings.values[key]), "saved setting matches " + String(key))
+	var legacy: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(settings_file))
+	legacy.version = 1
+	legacy.movement.erase("gravity")
+	legacy.movement.erase("air_inertia")
+	var legacy_file := FileAccess.open(settings_file, FileAccess.WRITE)
+	legacy_file.store_string(JSON.stringify(legacy))
+	legacy_file.close()
+	check(restored.load_from(settings_file), "older movement saves still load")
+	check(is_equal_approx(restored.values.gravity, 22.0) and is_equal_approx(restored.values.air_inertia, 60.0),
+		"older saves inherit defaults for the two new settings")
+	check(is_equal_approx(restored.values.min_speed, 6.0), "older saves preserve existing tuning")
 	DirAccess.remove_absolute(settings_file)
 
 	preview.queue_free()
@@ -100,6 +113,44 @@ func run() -> void:
 	if failures == 0:
 		print("Movement checks passed.")
 	quit(int(failures > 0))
+
+
+func check_air_tuning(preview) -> void:
+	var player = preview.player
+	player.position = Vector3(-12, 12, 0)
+	await physics_frame
+	player.step(1.0 / 60.0, 0.0, false)
+	check(not player.is_on_floor(), "air tuning test starts airborne")
+
+	preview.tuning_sliders[&"gravity"].value = 10.0
+	player.velocity = Vector3.ZERO
+	await physics_frame
+	player.step(1.0 / 60.0, 0.0, false)
+	var light_fall: float = player.velocity.y
+	preview.tuning_sliders[&"gravity"].value = 35.0
+	player.velocity = Vector3.ZERO
+	await physics_frame
+	player.step(1.0 / 60.0, 0.0, false)
+	check(player.velocity.y < light_fall, "higher gravity accelerates the fall")
+
+	preview.tuning_sliders[&"air_inertia"].value = 0.0
+	player.velocity = Vector3(2, 0, 0)
+	await physics_frame
+	player.step(1.0 / 60.0, -1.0, false)
+	var quick_turn: float = player.velocity.x
+	preview.tuning_sliders[&"air_inertia"].value = 100.0
+	player.velocity = Vector3(2, 0, 0)
+	await physics_frame
+	player.step(1.0 / 60.0, 0.0, false)
+	check(is_equal_approx(player.velocity.x, 2.0), "full inertia preserves coasting momentum")
+	await physics_frame
+	player.step(1.0 / 60.0, -1.0, false)
+	check(player.velocity.x > quick_turn and player.velocity.x < 2.0,
+		"full inertia slows reversal while still allowing steering")
+	for frame in 42:
+		await physics_frame
+		player.step(1.0 / 60.0, -1.0, false)
+	check(player.velocity.x < 0 and not player.is_on_floor(), "steering can reverse the character in the air")
 
 
 func measure_jump(player, held: bool) -> float:

@@ -11,7 +11,6 @@ var jump_was_held := false
 var jump_can_cut := false
 @export var acceleration := 23.0
 @export var braking := 30.0
-@export var gravity := 22.0
 
 var motion := Motion.new()
 
@@ -38,7 +37,12 @@ func step(delta: float, direction: float, jump_held: bool, jump_pressed := false
 	var target := 0.0
 	if not is_zero_approx(direction):
 		target = signf(direction) * lerpf(tuning.min_speed, tuning.max_speed, absf(direction))
-	var rate := braking if is_zero_approx(direction) else acceleration
+	var coasting := is_zero_approx(direction)
+	var rate := braking if coasting else acceleration
+	if not grounded:
+		var inertia: float = tuning.air_inertia / 100.0
+		# Full inertia preserves coasting but still permits steering.
+		rate *= lerpf(1.0, 0.0 if coasting else 0.15, inertia)
 	velocity.x = move_toward(velocity.x, target, rate * delta)
 	if grounded:
 		jump_can_cut = false
@@ -46,7 +50,7 @@ func step(delta: float, direction: float, jump_held: bool, jump_pressed := false
 			velocity.y = tuning.max_jump if jump_held else tuning.min_jump
 			jump_can_cut = jump_held
 	else:
-		velocity.y -= gravity * delta
+		velocity.y -= tuning.gravity * delta
 		if jump_can_cut and not jump_held:
 			velocity.y = minf(velocity.y, tuning.min_jump)
 			jump_can_cut = false

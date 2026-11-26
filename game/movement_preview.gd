@@ -9,6 +9,12 @@ const TUNING_LABELS := {
 	&"min_jump": "Tap jump strength",
 	&"max_jump": "Hold jump strength",
 	&"lean_degrees": "Forward lean (°)",
+	&"gravity": "Gravity strength",
+	&"air_inertia": "Air inertia (%)",
+}
+const TUNING_HELP := {
+	&"gravity": "Higher gravity pulls the mannequin down faster.",
+	&"air_inertia": "Higher inertia carries more momentum and makes midair turns slower.",
 }
 const Stage := preload("res://game/mannequin_stage.gd")
 
@@ -157,10 +163,14 @@ func add_adjustment(panel: VBoxContainer, key: StringName) -> void:
 	var label := Label.new()
 	label.custom_minimum_size.x = 152
 	label.text = TUNING_LABELS[key]
+	var help: String = TUNING_HELP.get(key, "")
+	label.tooltip_text = help
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
 	row.add_child(label)
 	var slider := HSlider.new()
 	slider.custom_minimum_size.x = 130
 	slider.focus_mode = Control.FOCUS_NONE
+	slider.tooltip_text = help
 	var limits: Vector3 = Settings.LIMITS[key]
 	slider.min_value = snappedf(limits.x, 0.1)
 	slider.max_value = limits.y
