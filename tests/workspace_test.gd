@@ -46,9 +46,109 @@ func run() -> void:
 	workspace.save_figure(path)
 	check(workspace.status.text.begins_with("Saved"), "overwrite an existing save")
 	DirAccess.remove_absolute(path)
+	test_extrusion(workspace)
 	if failures == 0:
 		print("Workspace checks passed.")
 	quit(int(failures > 0))
+
+
+func test_extrusion(workspace) -> void:
+	workspace.figure.points.clear()
+	workspace.figure.links.clear()
+	workspace.select_place_mode()
+	var center := root.get_visible_rect().get_center()
+	click_at(center)
+	check(workspace.figure.points.size() == 1, "place a point from mouse input")
+	if workspace.figure.points.is_empty():
+		return
+
+	var arrow: Vector2 = workspace.handles.position_for(1)
+	var end := center + Vector2(50, 95)
+	mouse_button(arrow, true)
+	move_mouse(end)
+	check(workspace.preview_visible, "drag shows an extrusion preview")
+	check(workspace.figure.points.size() == 1, "preview leaves the figure intact")
+	var cancel := InputEventKey.new()
+	cancel.keycode = KEY_ESCAPE
+	cancel.pressed = true
+	root.push_input(cancel, true)
+	mouse_button(end, false)
+	check(workspace.figure.points.size() == 1, "Escape cancels extrusion")
+
+	mouse_button(arrow, true)
+	move_mouse(end)
+	mouse_button(end, false)
+	check(workspace.figure.points.size() == 2, "release adds one point")
+	if workspace.figure.points.size() != 2:
+		return
+	check(workspace.figure.links.size() == 1, "extrusion connects the new point")
+	check(workspace.selected_point == 1, "selection follows the new point")
+	check(is_equal_approx(workspace.figure.points[0].x, workspace.figure.points[1].x),
+		"directional extrusion keeps horizontal alignment")
+
+	workspace.mirror_button.button_pressed = true
+	var free_handle: Vector2 = workspace.handles.position_for(4)
+	var diagonal: Vector2 = workspace.handles.center + Vector2(85, -60)
+	mouse_button(free_handle, true)
+	move_mouse(diagonal)
+	mouse_button(diagonal, false)
+	check(workspace.figure.points.size() == 4, "mirrored free extrusion adds two points")
+	if workspace.figure.points.size() != 4:
+		return
+	var primary: Vector3 = workspace.figure.points[2]
+	var mirrored: Vector3 = workspace.figure.points[3]
+	check(primary.is_equal_approx(workspace.point_on_plane(diagonal)), "free extrusion follows both axes")
+	check(mirrored.is_equal_approx(Vector3(-primary.x, primary.y, primary.z)),
+		"mirrored point is opposite across the centerline")
+	check(workspace.figure.links.size() == 3, "both sides connect to the center point")
+
+	var up_arrow: Vector2 = workspace.handles.position_for(3)
+	var continued: Vector2 = workspace.handles.center + Vector2(0, -95)
+	mouse_button(up_arrow, true)
+	move_mouse(continued)
+	mouse_button(continued, false)
+	check(workspace.figure.points.size() == 6 and workspace.figure.links.size() == 5,
+		"continued mirrored extrusion connects from both corresponding sources")
+
+	click_at(center)
+	var center_arrow: Vector2 = workspace.handles.position_for(3)
+	var center_target: Vector2 = workspace.handles.center + Vector2(0, -110)
+	mouse_button(center_arrow, true)
+	move_mouse(center_target)
+	mouse_button(center_target, false)
+	check(workspace.figure.points.size() == 7 and workspace.figure.links.size() == 6,
+		"extrusion along the centerline adds one point and one link")
+
+
+	click_at(center + Vector2(175, 110))
+	var unmatched_handle: Vector2 = workspace.handles.position_for(0)
+	mouse_button(unmatched_handle, true)
+	move_mouse(unmatched_handle + Vector2(80, 0))
+	mouse_button(unmatched_handle + Vector2(80, 0), false)
+	check(workspace.figure.points.size() == 8 and workspace.figure.links.size() == 6,
+		"mirroring requires a matching source")
+	click_at(center + Vector2(4, 180))
+	check(is_zero_approx(workspace.figure.points.back().x), "placement near the centerline snaps to it")
+
+
+func click_at(position: Vector2) -> void:
+	mouse_button(position, true)
+	mouse_button(position, false)
+
+
+func mouse_button(position: Vector2, pressed: bool) -> void:
+	var event := InputEventMouseButton.new()
+	event.position = position
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = pressed
+	root.push_input(event, true)
+
+
+func move_mouse(position: Vector2) -> void:
+	var event := InputEventMouseMotion.new()
+	event.position = position
+	event.button_mask = MOUSE_BUTTON_MASK_LEFT
+	root.push_input(event, true)
 
 
 func check(condition: bool, description: String) -> void:

@@ -126,3 +126,9 @@ A small next experiment could test the direct interaction loop by building a hea
 Explore mirroring as an optional modifier of creative actions. Extrusion is a first candidate, with placement, connections, rotation, and other actions to consider as their behavior becomes clearer. Preview both sides before committing a mirrored gesture. A new point on the centerline can be shared by both sides. Off-center naming conventions and persistent symmetry remain open.
 
 Explore both directional and unrestricted extrusion in the same direct manipulation workflow. Directional extrusion gives a precise axis. Unrestricted extrusion lets the creator choose an angle by dragging. Both should support continuing from the new point. A small playtest could compare a straight spine with a bent arm, then return to the shoulder to start another branch. Evaluate how enjoyable and satisfying each gesture feels, as well as how easily it produces the intended shape. A limited mirrored extrusion test could follow once those gestures are easy to read.
+
+### Second prototype
+
+Selected points offer four directional pulls and one free pull in the existing placement tool. A pull previews a link and its length. Release creates the link and selects its endpoint. Escape cancels the gesture. Handles yield to nearby points so branching remains possible.
+
+Mirror extrusion is a workspace toggle with a fixed vertical centerline for this build. New placements near the line snap to it while the toggle is active. A centered source can branch to both sides, and an off-center source needs a matching point across the line. Mirroring applies to extrusion as it happens. The figure format and its existing point and link semantics are unchanged.
