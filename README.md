@@ -11,9 +11,9 @@ When a discussion reaches an important conclusion, update the relevant section o
 
 After building, run `dist/linux/workspace.x86_64` on Linux or `dist/windows/workspace.exe` on Windows. Both builds target x86-64 and include the runtime. Use **Front**, **Three-quarter**, and **Side** to inspect the white mannequin in its neutral pose.
 
-Click the torso or any arm or leg segment to adjust it. Selecting a limb segment highlights its counterpart and applies each adjustment to both sides. **Size** scales all dimensions together, **Length** adjusts joint spacing, and **Thickness** adjusts width. **Height offset** raises or lowers a limb at its attachment while keeping the joints connected. For the torso, **Height** changes its vertical dimension and the head, neck, and limbs follow its proportions. Drag a slider or type an exact percentage.
+Click the head, neck, torso, or any arm or leg segment to adjust it. The controls appear to the right of the silhouette. Selecting a limb segment highlights its counterpart and applies each adjustment to both sides. **Size** scales all dimensions together, **Length** adjusts joint spacing, and **Thickness** adjusts width. **Height offset** raises or lowers a limb at its attachment while keeping the joints connected. For the head, neck, and torso, **Height** changes the vertical dimension. The head stays attached as the neck or torso changes. Drag a slider or type an exact percentage.
 
-**Save proportions** writes the torso and all eight limb segments to `user://mannequin-proportions.json` and replaces the previous local preset. The viewer loads it automatically on launch and accepts presets from the earlier limb-only editor. Previously saved side-to-side differences are kept until you adjust those controls. The preset lives outside the repository.
+**Save proportions** writes all eleven parts to `user://mannequin-proportions.json` and replaces the previous local preset. The viewer loads it automatically on launch and accepts earlier limb-only and torso presets. Previously saved side-to-side differences are kept until you adjust those controls. The preset lives outside the repository.
 
 ## Try the point editor
 

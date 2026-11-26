@@ -70,15 +70,15 @@ func _ready() -> void:
 
 
 func show_part(part_name: StringName, factors: Vector4) -> void:
-	var is_torso := part_name == &"Torso"
+	var is_limb := String(part_name).begins_with("Left") or String(part_name).begins_with("Right")
 	var pair_name := String(part_name).trim_prefix("Left").trim_prefix("Right")
-	title.text = "Torso" if is_torso else pair_name.capitalize() + " Pair"
-	labels[1].text = "Height" if is_torso else "Length"
-	var length_help := "Changes the torso's height." if is_torso else HELP[1]
+	title.text = pair_name.capitalize() + " Pair" if is_limb else String(part_name)
+	labels[1].text = "Length" if is_limb else "Height"
+	var length_help := HELP[1] if is_limb else "Changes the %s’s height." % String(part_name).to_lower()
 	labels[1].tooltip_text = length_help
 	sliders[1].tooltip_text = length_help
 	for control: Control in [labels[3], sliders[3], fields[3]]:
-		control.visible = not is_torso
+		control.visible = is_limb
 	for index in LABELS.size():
 		sliders[index].set_value_no_signal(factors[index] * 100)
 		fields[index].set_value_no_signal(factors[index] * 100)

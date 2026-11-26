@@ -160,3 +160,9 @@ The viewer saves all eight segments as a local, versioned JSON preset. The game 
 Feedback from proportion tuning called for torso controls, paired limb edits, and adjusting a limb's vertical position after changing its thickness. The torso now has size, height, and thickness controls. Selecting a limb highlights its counterpart, and each adjustment applies to both sides. A limb's height offset moves its attachment. Lower limb offsets move the shared elbow or knee. Shoulders and hips follow the torso's contour, and length changes continue to carry connected segments.
 
 The saved preset now includes torso dimensions and height offsets. Earlier presets still load, including any asymmetric values. Adjusting a control on a pair applies that value to both sides.
+
+### Head and neck proportion controls
+
+The head and neck now have size, height, and thickness controls. Head changes preserve its neck attachment, and neck changes carry the head. The proportion panel sits to the right of the figure. The viewer adjusts the framing when large proportions would otherwise reach the panel.
+
+New saves include all eleven parts. The earlier preset versions load with the original head and neck dimensions.

@@ -77,6 +77,35 @@ func run() -> void:
 	check(joint_center(upper, 1.0).is_equal_approx(joint_center(lower, -1.0)), "torso edits preserve limb connections")
 
 
+	root.push_input(release, true)
+	click.position = viewer.camera.unproject_position(model.head.global_position)
+	root.push_input(click, true)
+	await physics_frame
+	await process_frame
+	check(viewer.selected_limb == &"Head", "clicking the head selects it")
+	var head_bottom: float = model.head.position.y - model.head.scale.y * 0.5
+	viewer.limb_controls.fields[1].value = 150
+	viewer.limb_controls.fields[2].value = 145
+	check(is_equal_approx(model.head.scale.y, 1.06 * 1.5), "head height can be edited")
+	check(is_equal_approx(model.head.scale.x, 1.06 * 1.45), "head thickness can be edited")
+	check(is_equal_approx(model.head.position.y - model.head.scale.y * 0.5, head_bottom),
+		"head dimensions keep it attached to the neck")
+
+	root.push_input(release, true)
+	click.position = viewer.camera.unproject_position(model.neck.global_position)
+	root.push_input(click, true)
+	await physics_frame
+	await process_frame
+	check(viewer.selected_limb == &"Neck", "clicking the neck selects it")
+	var head_before_neck_edit: float = model.head.position.y
+	viewer.limb_controls.fields[1].value = 145
+	check(is_equal_approx(capsule_span(model.neck), 0.16 * 1.45), "neck height can be edited")
+	check(model.head.position.y > head_before_neck_edit, "the head follows the neck")
+	await process_frame
+	check(viewer.limb_controls.position.x > viewer.projected_right_edge(),
+		"the controls sit outside the projected silhouette")
+
+
 	var file := "user://mannequin-test-%s.json" % OS.get_process_id()
 	check(viewer.save_proportions(file), "proportions save to JSON")
 	var expected: String = model.encode_proportions()
@@ -85,6 +114,12 @@ func run() -> void:
 	check(not model.decode_proportions('{"version":1,"limbs":{}}'), "reject incomplete presets")
 	check(model.encode_proportions() == expected, "invalid presets preserve current values")
 	var legacy: Dictionary = JSON.parse_string(expected)
+	legacy.version = 2
+	legacy.erase("head")
+	legacy.erase("neck")
+	check(model.decode_proportions(JSON.stringify(legacy)), "torso and limb presets still load")
+	check(is_equal_approx(model.head_factors.y, 1.0) and is_equal_approx(model.neck_factors.y, 1.0),
+		"older presets get the original head and neck")
 	legacy.version = 1
 	legacy.erase("torso")
 	for values in legacy.limbs.values():

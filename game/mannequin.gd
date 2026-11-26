@@ -13,6 +13,8 @@ const FACTOR_KEYS := ["size", "length", "thickness", "height_offset"]
 var limb_factors: Dictionary[StringName, Vector4] = {}
 var limb_meshes: Dictionary[StringName, MeshInstance3D] = {}
 var torso_factors := DEFAULT_FACTORS
+var head_factors := DEFAULT_FACTORS
+var neck_factors := DEFAULT_FACTORS
 var torso: MeshInstance3D
 var head: MeshInstance3D
 var neck: MeshInstance3D
@@ -26,18 +28,21 @@ func _ready() -> void:
 	material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 
 	head = add_ellipsoid("Head", Vector3(0.0, 2.11, 0.025), Vector3.ONE * 1.06)
-	neck = add_capsule("Neck", Vector3(0.0, 1.48, 0.0), Vector3(0.0, 1.64, 0.0), 0.147)
+	neck = add_pickable_capsule(&"Neck")
 	torso = add_ellipsoid("Torso", TORSO_CENTER, TORSO_SIZE)
-	update_limbs()
+	update_proportions()
 
 
-func update_limbs() -> void:
+func update_proportions() -> void:
 	var width := torso_factors.x * torso_factors.z
 	var height := torso_factors.x * torso_factors.y
 	torso.scale = TORSO_SIZE * Vector3(width, height, width)
-	var top_change := (torso.scale.y - TORSO_SIZE.y) * 0.5
-	head.position.y = 2.11 + top_change
-	neck.position.y = 1.56 + top_change
+	var neck_span := 0.16 * neck_factors.x * neck_factors.y
+	var neck_base := TORSO_CENTER + Vector3.UP * (torso.scale.y * 0.5 - minf(0.10, neck_span * 0.625))
+	var neck_top := neck_base + Vector3.UP * neck_span
+	update_capsule(neck, neck_base, neck_top, 0.147 * neck_factors.x * neck_factors.z)
+	head.scale = 1.06 * head_factors.x * Vector3(head_factors.z, head_factors.y, head_factors.z)
+	head.position.y = neck_top.y - minf(0.06, neck_span * 0.375) + head.scale.y * 0.5
 	floor_height = INF
 	update_side("Left", -1.0)
 	update_side("Right", 1.0)
@@ -80,44 +85,50 @@ func update_limb(limb_name: StringName, start: Vector3, rest_offset: Vector3,
 		offset.y += offset.length() * lower_factors.w
 	var end := start + offset
 	var radius := rest_radius * factors.x * factors.z
-	var length := start.distance_to(end)
-	var height := length + 2.0 * radius
-	var center := (start + end) * 0.5
-	var orientation := Quaternion(Vector3.UP, (end - start).normalized())
-
 	var part := limb_meshes.get(limb_name) as MeshInstance3D
 	if part == null:
-		part = add_part(limb_name, CapsuleMesh.new(), center)
+		part = add_pickable_capsule(limb_name)
 		limb_meshes[limb_name] = part
-		var target := Area3D.new()
-		target.name = "PickTarget"
-		target.collision_layer = 1
-		target.collision_mask = 0
-		target.monitoring = false
-		target.monitorable = false
-		part.add_child(target)
-		var collision := CollisionShape3D.new()
-		collision.name = "Capsule"
-		collision.shape = CapsuleShape3D.new()
-		target.add_child(collision)
+	update_capsule(part, start, end, radius)
+	floor_height = minf(floor_height, minf(start.y, end.y) - radius)
+	return end
+
+
+func add_pickable_capsule(part_name: StringName) -> MeshInstance3D:
+	var part := add_part(part_name, CapsuleMesh.new(), Vector3.ZERO)
+	var target := Area3D.new()
+	target.name = "PickTarget"
+	target.collision_mask = 0
+	target.monitoring = false
+	target.monitorable = false
+	part.add_child(target)
+	var collision := CollisionShape3D.new()
+	collision.name = "Capsule"
+	collision.shape = CapsuleShape3D.new()
+	target.add_child(collision)
+	return part
+
+
+func update_capsule(part: MeshInstance3D, start: Vector3, end: Vector3, radius: float) -> void:
+	var height := start.distance_to(end) + 2.0 * radius
 	var mesh := part.mesh as CapsuleMesh
 	mesh.radius = radius
 	mesh.height = height
-	part.position = center
-	part.quaternion = orientation
-	var collision := part.get_node("PickTarget/Capsule") as CollisionShape3D
-	var shape := collision.shape as CapsuleShape3D
+	part.position = (start + end) * 0.5
+	part.quaternion = Quaternion(Vector3.UP, (end - start).normalized())
+	var shape := part.get_node("PickTarget/Capsule").shape as CapsuleShape3D
 	shape.radius = radius
 	shape.height = height
-	floor_height = minf(floor_height, minf(start.y, end.y) - radius)
-	return end
 
 
 func encode_proportions() -> String:
 	var values := {}
 	for limb in limb_factors:
 		values[String(limb)] = encode_factors(limb_factors[limb])
-	return JSON.stringify({"version": 2, "torso": encode_factors(torso_factors), "limbs": values}, "\t")
+	return JSON.stringify({
+		"version": 3, "limbs": values, "torso": encode_factors(torso_factors),
+		"head": encode_factors(head_factors), "neck": encode_factors(neck_factors),
+	}, "\t")
 
 
 func encode_factors(factors: Vector4) -> Dictionary:
@@ -129,9 +140,12 @@ func encode_factors(factors: Vector4) -> Dictionary:
 
 func decode_proportions(contents: String) -> bool:
 	var decoded: Variant = JSON.parse_string(contents)
-	if not decoded is Dictionary or (decoded.get("version") != 1 and decoded.get("version") != 2):
+	if not decoded is Dictionary:
 		return false
-	var legacy: bool = decoded.version == 1
+	var version: Variant = decoded.get("version")
+	if version != 1 and version != 2 and version != 3:
+		return false
+	var legacy: bool = version == 1
 	var values: Variant = decoded.get("limbs")
 	if not values is Dictionary or values.size() != limb_factors.size():
 		return false
@@ -142,11 +156,16 @@ func decode_proportions(contents: String) -> bool:
 			return false
 		restored[limb] = validated
 	var restored_torso := DEFAULT_FACTORS if legacy else decode_factors(decoded.get("torso"), false)
-	if not restored_torso.is_finite() or not is_zero_approx(restored_torso.w):
-		return false
+	var restored_head := decode_factors(decoded.get("head"), false) if version == 3 else DEFAULT_FACTORS
+	var restored_neck := decode_factors(decoded.get("neck"), false) if version == 3 else DEFAULT_FACTORS
+	for factors: Vector4 in [restored_torso, restored_head, restored_neck]:
+		if not factors.is_finite() or not is_zero_approx(factors.w):
+			return false
 	limb_factors = restored
 	torso_factors = restored_torso
-	update_limbs()
+	head_factors = restored_head
+	neck_factors = restored_neck
+	update_proportions()
 	return true
 
 
@@ -171,15 +190,6 @@ func add_ellipsoid(part_name: String, center: Vector3, dimensions: Vector3) -> M
 	mesh.height = 1.0
 	var part := add_part(part_name, mesh, center)
 	part.scale = dimensions
-	return part
-
-
-func add_capsule(part_name: String, start: Vector3, end: Vector3, radius: float) -> MeshInstance3D:
-	var mesh := CapsuleMesh.new()
-	mesh.radius = radius
-	mesh.height = start.distance_to(end) + 2.0 * radius
-	var part := add_part(part_name, mesh, (start + end) * 0.5)
-	part.quaternion = Quaternion(Vector3.UP, (end - start).normalized())
 	return part
 
 

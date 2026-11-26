@@ -30,7 +30,10 @@ func _ready() -> void:
 	add_controls()
 	load_proportions()
 	set_view(1)
-	get_viewport().size_changed.connect(position_limb_controls)
+	get_viewport().size_changed.connect(func():
+		frame_figurine()
+		position_limb_controls()
+	)
 
 
 func add_stage() -> void:
@@ -97,7 +100,7 @@ func add_controls() -> void:
 	toolbar.add_child(save)
 
 	status.position = Vector2(20, 58)
-	status.text = "Click the torso or a limb segment to adjust proportions."
+	status.text = "Click a part of the mannequin to adjust its proportions."
 	status.add_theme_color_override("font_shadow_color", Color("#20292e"))
 	status.add_theme_constant_override("shadow_offset_y", 1)
 	interface.add_child(status)
@@ -120,27 +123,24 @@ func _physics_process(_delta: float) -> void:
 	query.collide_with_areas = true
 	query.collide_with_bodies = false
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	var torso_distance := ray_torso_distance(origin, end)
-	if torso_distance < INF and (hit.is_empty() or torso_distance < origin.distance_to(hit.position)):
-		select_limb(&"Torso")
-	elif hit.is_empty():
-		select_limb(&"")
-	else:
-		select_limb(hit.collider.get_parent().name)
+	var distance := INF if hit.is_empty() else origin.distance_to(hit.position)
+	var part_name: StringName = &"" if hit.is_empty() else hit.collider.get_parent().name
+	for part: MeshInstance3D in [figurine.torso, figurine.head]:
+		var hit_distance := ellipsoid_hit_distance(part, origin, end)
+		if hit_distance < distance:
+			distance = hit_distance
+			part_name = part.name
+	select_limb(part_name)
 
 
-func ray_torso_distance(origin: Vector3, end: Vector3) -> float:
-	# In torso-local space the mesh is a sphere with radius 0.5.
-	var inverse: Transform3D = figurine.torso.global_transform.affine_inverse()
-	var start: Vector3 = inverse * origin
-	var direction: Vector3 = inverse * end - start
-	var nearest := -start.dot(direction) / direction.length_squared()
-	var midpoint := start + nearest * direction
-	var gap := 0.25 - midpoint.length_squared()
-	if gap < 0.0:
+func ellipsoid_hit_distance(part: MeshInstance3D, origin: Vector3, end: Vector3) -> float:
+	# Head and torso are scaled unit-diameter spheres.
+	var inverse := part.global_transform.affine_inverse()
+	var hit := Geometry3D.segment_intersects_sphere(inverse * origin, inverse * end, Vector3.ZERO, 0.5)
+	if hit.is_empty():
 		return INF
-	var fraction := nearest - sqrt(gap / direction.length_squared())
-	return origin.distance_to(end) * fraction if fraction >= 0.0 and fraction <= 1.0 else INF
+	var point: Vector3 = part.global_transform * hit[0]
+	return origin.distance_to(point)
 
 
 func paired_name(limb_name: StringName) -> StringName:
@@ -151,10 +151,10 @@ func paired_name(limb_name: StringName) -> StringName:
 
 
 func set_highlight(part_name: StringName, material: Material) -> void:
-	if part_name == &"Torso":
-		figurine.torso.material_override = material
-	elif part_name != &"":
-		figurine.limb_meshes[part_name].material_override = material
+	if part_name == &"":
+		return
+	figurine.get_node(NodePath(String(part_name))).material_override = material
+	if figurine.limb_meshes.has(part_name):
 		figurine.limb_meshes[paired_name(part_name)].material_override = material
 
 
@@ -163,26 +163,33 @@ func select_limb(limb_name: StringName) -> void:
 	selected_limb = limb_name
 	if selected_limb == &"":
 		limb_controls.hide()
+		frame_figurine()
 		return
 	set_highlight(selected_limb, highlight)
-	var factors: Vector4 = figurine.torso_factors if selected_limb == &"Torso" else figurine.limb_factors[selected_limb]
-	limb_controls.show_part(selected_limb, factors)
+	limb_controls.show_part(selected_limb, part_factors(selected_limb))
+	limb_controls.reset_size()
+	frame_figurine()
 	position_limb_controls()
+
+
+func part_factors(part_name: StringName) -> Vector4:
+	match part_name:
+		&"Torso": return figurine.torso_factors
+		&"Head": return figurine.head_factors
+		&"Neck": return figurine.neck_factors
+		_: return figurine.limb_factors[part_name]
 
 
 func position_limb_controls() -> void:
 	if selected_limb == &"":
 		return
 	limb_controls.reset_size()
-	var part: MeshInstance3D = figurine.torso if selected_limb == &"Torso" else figurine.limb_meshes[selected_limb]
+	var part := figurine.get_node(NodePath(String(selected_limb))) as MeshInstance3D
 	var anchor := camera.unproject_position(part.global_position)
 	var screen := get_viewport().get_visible_rect().size
 	var size := limb_controls.size
-	var x := anchor.x + 58.0
-	if x + size.x > screen.x - 16.0:
-		x = anchor.x - size.x - 58.0
 	limb_controls.position = Vector2(
-		clampf(x, 16.0, maxf(16.0, screen.x - size.x - 16.0)),
+		screen.x - size.x - 24.0,
 		clampf(anchor.y - size.y * 0.5, 86.0, maxf(86.0, screen.y - size.y - 16.0))
 	)
 
@@ -190,17 +197,22 @@ func position_limb_controls() -> void:
 func set_limb_factor(index: int, factor: float) -> void:
 	if selected_limb == &"":
 		return
-	if selected_limb == &"Torso":
-		figurine.torso_factors[index] = factor
-	else:
-		var opposite := paired_name(selected_limb)
-		var factors: Vector4 = figurine.limb_factors[selected_limb]
-		var opposite_factors: Vector4 = figurine.limb_factors[opposite]
-		factors[index] = factor
-		opposite_factors[index] = factor
-		figurine.limb_factors[selected_limb] = factors
-		figurine.limb_factors[opposite] = opposite_factors
-	figurine.update_limbs()
+	var factors := part_factors(selected_limb)
+	factors[index] = factor
+	match selected_limb:
+		&"Torso":
+			figurine.torso_factors = factors
+		&"Head":
+			figurine.head_factors = factors
+		&"Neck":
+			figurine.neck_factors = factors
+		_:
+			var opposite := paired_name(selected_limb)
+			var opposite_factors: Vector4 = figurine.limb_factors[opposite]
+			opposite_factors[index] = factor
+			figurine.limb_factors[selected_limb] = factors
+			figurine.limb_factors[opposite] = opposite_factors
+	figurine.update_proportions()
 	frame_figurine()
 	status.text = "Unsaved proportions"
 
@@ -242,10 +254,27 @@ func set_view(index: int) -> void:
 func frame_figurine() -> void:
 	stage.position.y = figurine.floor_height - 0.003
 	var bottom := minf(0.0, figurine.floor_height)
-	var top_change := maxf(0.0, figurine.head.position.y - 2.11)
+	var top_change := maxf(0.0, figurine.head.position.y + figurine.head.scale.y * 0.5 - 2.64)
 	var target := Vector3(0.0, 1.31 + (bottom + top_change) * 0.5, 0.0)
 	camera.size = 3.65 + top_change - bottom
 	var angle := deg_to_rad(VIEW_ANGLES[current_view])
 	var vertical_offset := 0.65 if current_view == 1 else 0.0
 	camera.position = target + Vector3(sin(angle) * 6.0, vertical_offset, cos(angle) * 6.0)
 	camera.look_at(target)
+
+	# Keep the right edge of the silhouette clear of the panel, even at large proportions.
+	if limb_controls.visible:
+		var half_width := get_viewport().get_visible_rect().size.x * 0.5
+		var available := maxf(half_width - limb_controls.size.x - 48.0, 32.0)
+		var bounds := projected_right_edge()
+		camera.size *= maxf(1.0, (bounds - half_width) / available)
+
+
+func projected_right_edge() -> float:
+	var right := -INF
+	for part: MeshInstance3D in figurine.get_children():
+		var bounds := part.get_aabb()
+		for index in 8:
+			var point := part.global_transform * bounds.get_endpoint(index)
+			right = maxf(right, camera.unproject_position(point).x)
+	return right
