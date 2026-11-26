@@ -16,6 +16,8 @@ var held_cube: GrabCube
 var grip_side := 0.0
 var grip_anchor := Vector3.ZERO
 var grip_height := 0.0
+var grip_horizontal_offset := 0.0
+var grip_from_above := false
 
 var settings := Settings.new()
 var jump_was_held := false
@@ -51,6 +53,9 @@ func update_grip(cube: GrabCube, grab_held: bool) -> void:
 	if held_cube != null:
 		return
 
+	if is_on_floor() and try_top_grip(cube):
+		return
+
 	var separation := cube.global_position.x - global_position.x
 	if absf(separation) < 0.52 or absf(separation) > GrabCube.HALF_SIZE * 1.42 + GRAB_RANGE:
 		return
@@ -68,19 +73,58 @@ func update_grip(cube: GrabCube, grab_held: bool) -> void:
 	if gap < 0.25 or gap > GRAB_RANGE or absf(world_anchor.y - hand_level.y) > 0.62:
 		return
 
+	begin_grip(cube, anchor, normal, side, false)
+
+
+func try_top_grip(cube: GrabCube) -> bool:
+	var feet := cube.to_local(global_position)
+	var up := cube.global_basis.inverse() * Vector3.UP
+	var face_size := GrabCube.HALF_SIZE
+	for normal in [Vector3.UP, Vector3.DOWN, Vector3.LEFT, Vector3.RIGHT]:
+		var up_alignment: float = normal.dot(up)
+		if up_alignment < 0.55:
+			continue
+		var distance: float = (feet.dot(normal) - face_size) / up_alignment
+		if distance < -0.12 or distance > 0.22:
+			continue
+		var foot_on_face := feet - up * distance
+		var tangent := Vector3(-normal.y, normal.x, 0)
+		var foot_along := foot_on_face.dot(tangent)
+		if absf(foot_along) > face_size or absf(foot_on_face.z) > face_size:
+			continue
+		var facing := motion.facing
+		var forward := cube.global_basis.inverse() * Vector3(facing, 0, 0)
+		var margin := face_size - GRIP_FACE_MARGIN
+		var along := clampf(foot_along + 0.20 * forward.dot(tangent), -margin, margin)
+		begin_grip(cube, normal * face_size + tangent * along, normal, facing, true)
+		return true
+	return false
+
+
+func begin_grip(cube: GrabCube, anchor: Vector3, normal: Vector3, side: float, from_above: bool) -> void:
+	var world_offset := cube.to_global(anchor) - global_position
 	held_cube = cube
 	grip_side = side
 	grip_anchor = anchor
-	grip_height = world_anchor.y - global_position.y
+	grip_height = world_offset.y
+	grip_horizontal_offset = world_offset.x
+	grip_from_above = from_above
+	# Let the character ride the cube's moving surface while its feet still support it.
+	platform_floor_layers = 3 if from_above else 1
+	platform_on_leave = PLATFORM_ON_LEAVE_DO_NOTHING if from_above else PLATFORM_ON_LEAVE_ADD_VELOCITY
 	motion.grip_cube = cube
 	motion.grip_side = side
 	motion.grip_anchor = anchor
 	motion.grip_normal = normal
+	motion.grip_from_above = from_above
 
 
 func release_grip() -> void:
 	held_cube = null
 	grip_side = 0.0
+	grip_from_above = false
+	platform_floor_layers = 1
+	platform_on_leave = PLATFORM_ON_LEAVE_ADD_VELOCITY
 	motion.grip_cube = null
 
 
@@ -92,7 +136,9 @@ func step(delta: float, direction: float, jump_held: bool, jump_pressed := false
 		target = signf(direction) * lerpf(tuning.min_speed, tuning.max_speed, absf(direction))
 	if held_cube != null:
 		target /= 1.0 + held_cube.mass * 0.28
-		if target * grip_side < 0.0:
+		if grip_from_above:
+			target = limit_top_grip_speed(target, grounded)
+		elif target * grip_side < 0.0:
 			# The player can pull away only as fast as the cube can follow.
 			var gap := (held_cube.to_global(grip_anchor).x - global_position.x) * grip_side
 			var cube_follow_speed := maxf(0.0, -held_cube.linear_velocity.x * grip_side)
@@ -124,22 +170,40 @@ func step(delta: float, direction: float, jump_held: bool, jump_pressed := false
 	motion.animate(delta, velocity, is_on_floor(), tuning.max_speed, tuning.lean_degrees, direction)
 
 
+func limit_top_grip_speed(target: float, grounded: bool) -> float:
+	var offset := held_cube.global_basis * grip_anchor
+	var error := held_cube.global_position.x + offset.x - global_position.x - grip_horizontal_offset
+	if absf(error) < 0.18:
+		return target
+	var anchor_speed := held_cube.linear_velocity.x + held_cube.angular_velocity.cross(offset).x
+	var inherited := get_platform_velocity().x if grounded else 0.0
+	var relative := target + inherited - anchor_speed
+	if relative * error >= 0.0:
+		return target
+	var slack := maxf(0.0, 0.50 - absf(error))
+	return anchor_speed - inherited - signf(error) * minf(absf(relative), slack * 11.0)
+
+
 func jump_load() -> float:
 	return 1.0 if held_cube == null else 1.0 / sqrt(1.0 + held_cube.mass * 0.23)
 
 
 func pull_cube(target_speed: float, delta: float, grounded: bool) -> void:
+	if grip_from_above and motion.grip_blend < 0.75:
+		return
 	var offset := held_cube.global_basis * grip_anchor
 	var anchor := held_cube.global_position + offset
 	var contact_speed := held_cube.linear_velocity + held_cube.angular_velocity.cross(offset)
 	var lean_offset := clampf(sin(motion.lean) * 0.38, -0.09, 0.09)
-	var hold_point := global_position + Vector3(
-		grip_side * (GRAB_GAP + lean_offset), grip_height, 0
-	)
+	var horizontal_gap := grip_horizontal_offset if grip_from_above else grip_side * (GRAB_GAP + lean_offset)
+	var hold_point := global_position + Vector3(horizontal_gap, grip_height, 0)
 	var displacement := hold_point - anchor
 	var driver_x := lerpf(velocity.x, target_speed, 0.75)
-	var horizontal_force := displacement.x * 100.0 + (driver_x - contact_speed.x) * 19.0
-	var vertical_force := displacement.y * 95.0 + (velocity.y - contact_speed.y) * 12.0
+	var driver := Vector3(driver_x, velocity.y, 0)
+	if grounded and grip_from_above:
+		driver += get_platform_velocity()
+	var horizontal_force := displacement.x * 100.0 + (driver.x - contact_speed.x) * 19.0
+	var vertical_force := displacement.y * 95.0 + (driver.y - contact_speed.y) * 12.0
 	var mass := held_cube.mass
 	var force := Vector3(clampf(mass * horizontal_force, -150.0, 150.0),
 		clampf(mass * vertical_force, -115.0, 115.0), 0)
@@ -148,6 +212,8 @@ func pull_cube(target_speed: float, delta: float, grounded: bool) -> void:
 	# A loaded airborne grip pulls on the character as well as the cube.
 	if not grounded:
 		velocity.y -= force.y * delta / PLAYER_GRIP_MASS
+		if grip_from_above:
+			velocity.x -= force.x * delta / (PLAYER_GRIP_MASS * 0.65)
 
 
 func push_colliding_cube(target: float, delta: float) -> void:

@@ -112,6 +112,12 @@ func reset_sandbox() -> void:
 	cube.reset()
 
 
+func start_on_cube() -> void:
+	reset_sandbox()
+	player.position = cube.position + Vector3.UP * (GrabCube.HALF_SIZE + 0.03)
+	player.reset_physics_interpolation()
+
+
 func typing_number() -> bool:
 	return get_viewport().gui_get_focus_owner() is LineEdit
 
@@ -177,13 +183,14 @@ func add_controls() -> void:
 	panel.add_child(buttons)
 	add_button(buttons, "Back to proportions", Callable(self, "return_to_viewer"))
 	add_button(buttons, "Reset positions", reset_sandbox)
+	add_button(buttons, "Start on cube", start_on_cube)
 	add_button(buttons, "Save movement", save_movement)
 	add_button(buttons, "Center head", head_look.recenter)
 	var hint := Label.new()
 	hint.text = "A / D, ← / → or left stick to move   ·   Space or south face button to jump"
 	panel.add_child(hint)
 	var grab_hint := Label.new()
-	grab_hint.text = "Hold R1 or E near the orange cube · Jump to lift the face you grabbed"
+	grab_hint.text = "Hold R1 or E beside or on the orange cube · Jump to lift the face you grabbed"
 	panel.add_child(grab_hint)
 	for key: StringName in TUNING_LABELS:
 		add_adjustment(panel, key)

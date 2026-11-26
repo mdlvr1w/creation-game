@@ -64,6 +64,7 @@ func run() -> void:
 	check(player.held_cube == null, "reset releases the cube")
 	await test_jump_and_roll(preview)
 	await test_airborne_acquisition(preview)
+	await test_top_grab(preview)
 
 	if failures == 0:
 		print("Grab checks passed.")
@@ -120,6 +121,47 @@ func test_airborne_acquisition(preview) -> void:
 	check(player.held_cube == cube, "a jump can catch the side of the cube")
 	check(cube.position.y > height + 0.12 and absf(cube.rotation.z) > 0.1,
 		"catching it on the way up lifts and tips the cube")
+
+
+func test_top_grab(preview) -> void:
+	preview.start_on_cube()
+	var player = preview.player
+	var cube = preview.cube
+	await frames(preview, 15, 0.0, false)
+	check(player.is_on_floor(), "the figure can stand on the cube")
+	var torso_y: float = player.motion.model.torso.position.y
+	var left_upper: MeshInstance3D = player.motion.model.limb_meshes[&"LeftUpperLeg"]
+	var left_lower: MeshInstance3D = player.motion.model.limb_meshes[&"LeftLowerLeg"]
+	var original_knee := left_upper.basis.y.dot(left_lower.basis.y)
+	var original_foot := joint(left_lower, 1.0).y
+	await frames(preview, 25, 0.0, true)
+	check(player.held_cube == cube and player.grip_from_above, "the grab button alone catches the top face")
+	if player.held_cube == null:
+		return
+	check(player.motion.model.torso.position.y < torso_y - 0.4, "top grab lowers the torso automatically")
+	check(player.motion.model.torso.basis.y.z > 0.12, "top grab tips the torso forward")
+	check(left_upper.basis.y.dot(left_lower.basis.y) < original_knee - 0.35, "crouching bends the knee")
+	check(joint(left_upper, 1.0).is_equal_approx(joint(left_lower, -1.0)), "the crouch preserves the knee joint")
+	check(absf(joint(left_lower, 1.0).y - original_foot) < 0.10, "crouching keeps the foot at the surface")
+	for side in ["Left", "Right"]:
+		var forearm: MeshInstance3D = player.motion.model.limb_meshes[StringName(side + "LowerArm")]
+		check(face_gap(player, forearm, forearm.mesh.radius) < 0.10, "the forearms reach down to the top face")
+
+	var original_x: float = player.position.x
+	cube.apply_central_impulse(Vector3(-8, 0, 0))
+	await frames(preview, 28, 0.0, true)
+	check(player.position.x < original_x - 0.24, "a moving cube carries the figure without steering")
+
+	preview.start_on_cube()
+	await frames(preview, 15, 0.0, false)
+	await frames(preview, 25, 0.0, true)
+	var anchor: Vector3 = player.grip_anchor
+	await frames(preview, 28, -1.0, true)
+	check(absf(cube.rotation.z) > 0.2, "steering with a top grab can tip the cube")
+	check(player.held_cube == cube and player.grip_anchor == anchor, "rolling keeps the original top contact")
+
+	await frames(preview, 15, 0.0, false)
+	check(player.held_cube == null and not player.grip_from_above, "letting go releases the top grip")
 
 
 func face_gap(player, forearm: MeshInstance3D, radius: float) -> float:

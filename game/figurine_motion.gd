@@ -14,6 +14,7 @@ var grip_side := 0.0
 var grip_anchor := Vector3.ZERO
 var grip_normal := Vector3.RIGHT
 var grip_blend := 0.0
+var grip_from_above := false
 var lean := 0.0
 var head_look_target := Vector3.ZERO
 var head_look := Vector3.ZERO
@@ -55,7 +56,12 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 		turn = lerpf(turn, signf(direction) * turn_extent, absf(direction) * AIR_STEERING_POSE_SHARE)
 	head_look = head_look.lerp(head_look_target, 1.0 - exp(-delta * 12.0))
 	var look_yaw := head_look.y * BODY_LOOK_SHARE
-	var yaw := grip_side * PI * 0.5 if grabbing else turn + look_yaw
+	var grab_facing := grip_side
+	if grabbing and grip_from_above:
+		var horizontal := grip_cube.to_global(grip_anchor).x - global_position.x
+		if absf(horizontal) > 0.32:
+			grab_facing = signf(horizontal)
+	var yaw := grab_facing * PI * 0.5 if grabbing else turn + look_yaw
 	rotation.y = lerp_angle(rotation.y, yaw, 1.0 - exp(-delta * 17.0))
 
 	var target_lean := deg_to_rad(max_lean) * pow(pace, 0.72) if grounded else 0.0
@@ -65,7 +71,14 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 		var load := 0.82 * absf(effort) + 0.18 * pace
 		target_lean = deg_to_rad(max_lean) * load * signf(effort)
 	lean = lerpf(lean, target_lean, 1.0 - exp(-delta * 10.0))
-	var body_lean := rotation_about((lean_axes[0] + lean_axes[1]) * 0.5, lean)
+	var hip_center := (lean_axes[0] + lean_axes[1]) * 0.5
+	var crouch := grip_blend if grip_from_above else 0.0
+	if crouch > 0.0 and is_instance_valid(reach_cube):
+		var anchor_height := reach_cube.to_global(grip_anchor).y - global_position.y
+		crouch *= 1.0 - smoothstep(0.16, 1.1, anchor_height)
+	var crouch_depth := clampf((hip_center.y - model.floor_height) * 0.80, 0.17, 1.25)
+	var body_lean := rotation_about(hip_center, lerpf(lean, 0.55, crouch))
+	body_lean.origin.y -= crouch_depth * crouch
 	for part in UPPER_BODY:
 		model.get_node(NodePath(String(part))).transform = body_lean * rest[part]
 
@@ -80,6 +93,8 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 		var tuck := clampf(0.18 + velocity.y * 0.02, 0.08, 0.32) * air_pose
 		pose_pair(side + "UpperLeg", side + "LowerLeg", cycle * 0.48 - tuck,
 			maxf(0.0, cycle) * 0.5 + tuck * 1.5)
+		if crouch > 0.0:
+			bend_knee(side, body_lean, crouch)
 		pose_pair(side + "UpperArm", side + "LowerArm", -cycle * 0.40 - air_pose * 0.40,
 			-0.12 * stride - air_pose * 0.22, body_lean)
 
@@ -105,23 +120,50 @@ func reach_for_cube(side: String, body_pose: Transform3D) -> void:
 	var contact := reach_cube.to_global(contact_local)
 	var relaxed_tip := lower.position + lower.basis.y * lower_span * 0.5
 	var target: Vector3 = relaxed_tip.lerp(model.to_local(contact), grip_blend)
-	var offset := target - shoulder
+	var outward := signf(upper_rest.origin.x)
+	var bend := Vector3(outward * 0.45, -1.0, 0.0)
+	if grip_from_above:
+		bend = Vector3(outward * 0.6, 0.0, -1.0)
+	solve_pair(upper, lower, shoulder, target, bend)
+
+
+func bend_knee(side: String, body_pose: Transform3D, crouch: float) -> void:
+	var upper_name := StringName(side + "UpperLeg")
+	var lower_name := StringName(side + "LowerLeg")
+	var upper: MeshInstance3D = model.limb_meshes[upper_name]
+	var lower: MeshInstance3D = model.limb_meshes[lower_name]
+	var upper_rest := rest[upper_name]
+	var lower_rest := rest[lower_name]
+	var hip := body_pose * (upper_rest.origin - upper_rest.basis.y * segment_span(upper) * 0.5)
+	var half_span := segment_span(lower) * 0.5
+	var animated_foot := lower.position + lower.basis.y * half_span
+	var planted_foot := lower_rest.origin + lower_rest.basis.y * half_span
+	solve_pair(upper, lower, hip, animated_foot.lerp(planted_foot, crouch), Vector3.BACK)
+
+
+func solve_pair(upper: MeshInstance3D, lower: MeshInstance3D, start: Vector3, target: Vector3,
+		pole: Vector3) -> void:
+	var offset := target - start
 	if offset.length_squared() < 0.000001:
 		return
+	var upper_span := segment_span(upper)
+	var lower_span := segment_span(lower)
 	var direction := offset.normalized()
 	var distance := clampf(offset.length(), absf(upper_span - lower_span) + 0.001,
 		upper_span + lower_span - 0.001)
 	var along := (upper_span * upper_span - lower_span * lower_span + distance * distance) / (2.0 * distance)
 	var bend_amount := sqrt(maxf(0.0, upper_span * upper_span - along * along))
-	var outward := signf(upper_rest.origin.x)
-	var bend := Vector3(outward * 0.45, -1.0, 0.0)
-	bend -= direction * bend.dot(direction)
+	var bend := pole - direction * pole.dot(direction)
 	if bend.length_squared() < 0.000001:
-		bend = direction.cross(Vector3.FORWARD)
-	bend = bend.normalized()
-	var elbow := shoulder + direction * along + bend * bend_amount
-	point_segment(upper, shoulder, elbow)
-	point_segment(lower, elbow, shoulder + direction * distance)
+		bend = direction.cross(Vector3.RIGHT)
+	var joint := start + direction * along + bend.normalized() * bend_amount
+	point_segment(upper, start, joint)
+	point_segment(lower, joint, start + direction * distance)
+
+
+func segment_span(part: MeshInstance3D) -> float:
+	var mesh := part.mesh as CapsuleMesh
+	return mesh.height - 2.0 * mesh.radius
 
 
 func point_segment(part: MeshInstance3D, from: Vector3, to: Vector3) -> void:

@@ -226,3 +226,9 @@ The preview adds a low step to the left of the cube. Pulling from the step while
 ### Pose for a grab from above
 
 Holding the grab button is the only input needed when the figurine stands on a reachable object. The figurine bends its knees, tilts its torso forward, and reaches down with both arms to catch the surface. The crouch is part of the grab pose. Once the contact is made, the grip follows the same points as the object moves or rotates. Riding a rolling object and catching from below remain directions to explore.
+
+### First top grab
+
+Holding R1 or E while standing on the orange cube now starts an automatic crouch. The figure bends its knees, leans its torso forward, and reaches down with both forearms to catch the top surface. The grip stays on the acquired face as it rolls. The cube can carry the figurine while its feet are supported and pull on it through the grip after its feet leave the surface.
+
+The preview includes Start on cube for repeated tests. Catching an underside and refining full-tumble reach remain future experiments.
