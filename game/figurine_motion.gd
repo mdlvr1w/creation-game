@@ -24,7 +24,7 @@ var lean := 0.0
 var head_look_target := Vector3.ZERO
 var head_look := Vector3.ZERO
 var lean_axes: Array[Vector3] = []
-const MAX_GRIP_STRETCH := 1.85
+const MAX_GRIP_STRETCH := 1.92
 const BODY_LOOK_SHARE := 0.34
 const AIR_STEERING_POSE_SHARE := 0.42
 const UPPER_BODY := [&"Torso", &"Neck", &"Head"]
@@ -43,10 +43,19 @@ func bind_model(visual: Node3D) -> void:
 
 
 func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, max_lean: float,
-		direction: float, intent_speed := 0.0) -> void:
+		direction: float, intent_speed := 0.0, ground_speed := 0.0) -> void:
 	var speed := absf(velocity.x)
-	var pace := clampf(speed / max_speed, 0.0, 1.0)
-	stride = move_toward(stride, pace if grounded else 0.0, delta * 5.0)
+	var pace_speed := absf(ground_speed) if shared_attachment and grounded else speed
+	var pace := clampf(pace_speed / max_speed, 0.0, 1.0)
+	var gait_speed := ground_speed
+	var gait_pace := pace
+	if shared_attachment and grounded:
+		# At low relative speed, show some effort even when the surface resists travel.
+		var surface_speed := signf(ground_speed) * maxf(0.0, absf(ground_speed) - 0.10)
+		var movement_weight := smoothstep(0.10, 0.65, absf(ground_speed))
+		gait_speed = lerpf(intent_speed * 0.30, surface_speed, movement_weight)
+		gait_pace = clampf(absf(gait_speed) / max_speed, 0.0, 1.0)
+	stride = move_toward(stride, gait_pace if grounded else 0.0, delta * 5.0)
 	air_pose = move_toward(air_pose, 0.0 if grounded else 1.0, delta * 6.0)
 	var grabbing := is_instance_valid(grip_cube)
 	var shared_hold := grabbing and shared_attachment
@@ -77,10 +86,10 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 	rotation.y = lerp_angle(rotation.y, yaw, 1.0 - exp(-delta * 17.0))
 
 	if grounded:
-		var stride_speed := speed
+		var stride_speed := absf(gait_speed) if shared_attachment else speed
 		if grabbing:
 			# Project the travel onto the visual forward axis, including when it faces against travel.
-			stride_speed = velocity.x * sin(rotation.y) if shared_hold else velocity.x * grip_side
+			stride_speed = gait_speed * sin(rotation.y) if shared_hold else velocity.x * grip_side
 		phase = fposmod(phase + stride_speed * delta * 2.2, TAU)
 	if shared_hold and not grounded:
 		stride = move_toward(stride, absf(direction), delta * 6.0)
@@ -138,16 +147,18 @@ func shared_facing_yaw(relative_speed: float, intent_speed: float, direction: fl
 	var steering := direction * AIR_STEERING_POSE_SHARE
 	var travel_yaw := lerpf(steering, signf(travel_speed) * half_turn, travel_weight)
 
-	# Supported motion within the requested speed keeps its facing through reversals.
-	# Platform travel and motion beyond that speed still turn the body.
+	# The stick explains travel in its direction even when footing falls away.
+	# Travel beyond the requested speed can still turn a carried character.
+	var intent_weight := smoothstep(0.05, 0.45, absf(direction))
+	var aligned_travel := smoothstep(0.0, 0.3, relative_speed * signf(intent_speed))
+	var control_weight := maxf(float(grounded), aligned_travel * intent_weight)
 	var drive_speed := absf(intent_speed)
-	var driven_speed := clampf(relative_speed, -drive_speed, drive_speed) if grounded else 0.0
+	var driven_speed := clampf(relative_speed, -drive_speed, drive_speed) * control_weight
 	var carried_weight := smoothstep(0.2, max_speed, absf(travel_speed - driven_speed))
 	var attachment_width := smoothstep(0.08, 0.30, absf(attachment.x))
 	var lateral_fraction := absf(attachment.x) / maxf(attachment.length(), 0.001)
-	var alignment := attachment_width * smoothstep(0.15, 0.65, lateral_fraction)
-	var footing_weight := 1.0 if grounded else 0.20
-	var grip_weight := alignment * footing_weight * (1.0 - carried_weight)
+	var alignment := attachment_width * lerpf(smoothstep(0.15, 0.65, lateral_fraction), 1.0, intent_weight)
+	var grip_weight := alignment * lerpf(0.20, 1.0, maxf(float(grounded), intent_weight)) * (1.0 - carried_weight)
 	return lerpf(travel_yaw + look_yaw, signf(attachment.x) * half_turn, grip_weight)
 
 

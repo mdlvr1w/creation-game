@@ -4,6 +4,7 @@ const PlaytestRecorder := preload("res://game/playtest_recorder.gd")
 const Mannequin := preload("res://game/mannequin.gd")
 const CubeControls := preload("res://game/cube_controls.gd")
 const GrabCube := preload("res://game/grabbable_cube.gd")
+const CubePlacement := preload("res://game/sandbox_cube_placement.gd")
 const GrabWheel := preload("res://game/grabbable_wheel.gd")
 const HeadLook := preload("res://game/controller_head_look.gd")
 const DynamicController := preload("res://game/dynamic_mannequin_controller.gd")
@@ -29,6 +30,10 @@ const DYNAMIC_SETTINGS_FILE := "user://mannequin-movement-dynamic.json"
 var use_dynamic_controller := false
 var player
 var cube := GrabCube.new()
+var placement: CubePlacement
+var placed_cubes: Array[GrabCube] = []
+var next_placed_cube := 1
+var inspected_cube: GrabCube
 var wheel: GrabWheel
 var irregular: RigidBody3D
 const IRREGULAR_START := Vector3(-6.15, 0.40, 0.0)
@@ -77,6 +82,7 @@ func _ready() -> void:
 	if FileAccess.file_exists(tuning_file) and not player.settings.load_from(tuning_file):
 		tuning_status.text = "Could not load saved movement settings."
 	var visual := Mannequin.new()
+	visual.pickable = false
 	# Bind after the visual is ready so the pose uses the current proportions.
 	player.motion.add_child(visual)
 	proportions = tree.get_meta("preview_proportions", FileAccess.get_file_as_string(Mannequin.WORKING_PROPORTIONS))
@@ -159,9 +165,14 @@ func add_head_direction_line(head: MeshInstance3D) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if placement != null and event is InputEventMouse:
+		placement.cursor_position = event.position
 	if not event.is_pressed() or event.is_echo():
 		return
-	if event is InputEventKey and event.physical_keycode == KEY_SPACE and not typing_number():
+	if event is InputEventKey and event.keycode == KEY_ESCAPE and placement != null:
+		if placement.cancel_placement():
+			get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.physical_keycode == KEY_SPACE and not typing_number():
 		jump_pressed = true
 	elif event is InputEventJoypadButton and event.button_index == JOY_BUTTON_A:
 		jump_pressed = true
@@ -171,11 +182,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		if typing_number():
 			get_viewport().gui_get_focus_owner().release_focus()
-		if event.button_index == MOUSE_BUTTON_LEFT:
+		if placement != null and placement.handle_mouse(event):
+			cube_controls.hide()
+			get_viewport().set_input_as_handled()
+		elif event.button_index == MOUSE_BUTTON_LEFT:
 			pending_cube_pick = event.position
 
 
 func _physics_process(delta: float) -> void:
+	if placement != null:
+		placement.check_placement()
 	if pending_cube_pick.is_finite():
 		pick_cube(pending_cube_pick)
 		pending_cube_pick = Vector2.INF
@@ -199,6 +215,7 @@ func _physics_process(delta: float) -> void:
 	player.motion.head_look_target = head_look.sample()
 	if use_dynamic_controller:
 		var targets: Array[RigidBody3D] = [cube, wheel, irregular]
+		targets.append_array(placed_cubes)
 		player.update_grip_candidates(targets, grab_held)
 	else:
 		player.update_grip(cube, grab_held)
@@ -214,21 +231,43 @@ func pick_cube(cursor: Vector2) -> void:
 	var origin := camera.project_ray_origin(cursor)
 	var end := origin + camera.project_ray_normal(cursor) * 40.0
 	var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(origin, end, 3))
-	if not hit.is_empty() and hit.collider == cube:
-		cube_controls.open_at(cursor, cube.tuning())
+	if not hit.is_empty() and (hit.collider == cube or hit.collider in placed_cubes):
+		inspected_cube = hit.collider
+		cube_controls.open_at(cursor, inspected_cube.tuning())
 	else:
+		inspected_cube = null
 		cube_controls.hide()
 
 
 func adjust_cube(key: StringName, value: float) -> void:
-	cube.adjust_property(key, value)
-	recorder.log_event("cube_tuning", {"changed": key, "properties": cube.tuning()})
+	if not is_instance_valid(inspected_cube):
+		return
+	inspected_cube.adjust_property(key, value)
+	recorder.log_event("cube_tuning", {
+		"target": fixture_name(inspected_cube), "changed": key, "properties": inspected_cube.tuning(),
+	})
 
 
-func reset_sandbox() -> void:
-	recorder.log_event("reset_positions", {})
+func spawn_cube(at: Vector3) -> void:
+	var body := GrabCube.new()
+	body.name = "PlacedCube%d" % next_placed_cube
+	next_placed_cube += 1
+	body.start = at
+	add_child(body)
+	placed_cubes.append(body)
+	recorder.log_event("cube_placed", {"target": body.name, "position": vector_values(at)})
+
+
+func reset_sandbox(clear_placements := false) -> void:
+	recorder.log_event("reset_positions", {"cleared_placements": clear_placements})
 	player.reset()
 	cube.reset()
+	if clear_placements:
+		for body in placed_cubes:
+			body.queue_free()
+		placed_cubes.clear()
+		inspected_cube = null
+		cube_controls.hide()
 	if wheel != null:
 		wheel.reset()
 		irregular.transform = Transform3D(Basis.IDENTITY, IRREGULAR_START)
@@ -251,6 +290,8 @@ func typing_number() -> bool:
 
 func _process(_delta: float) -> void:
 	update_camera()
+	if placement != null:
+		placement.follow_cursor()
 	if head_look.device < 0:
 		motion_status.text = "Controller tilt unavailable"
 	elif head_look.recenter_pending:
@@ -313,7 +354,7 @@ func add_controls() -> void:
 	buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(buttons)
 	add_button(buttons, "Back to proportions", Callable(self, "return_to_viewer"))
-	add_button(buttons, "Reset positions", reset_sandbox)
+	add_button(buttons, "Reset positions", reset_sandbox.bind(true))
 	add_button(buttons, "Start on cube", start_on_cube)
 	add_button(buttons, "Save movement", save_movement)
 	add_button(buttons, "Center head", head_look.recenter)
@@ -325,7 +366,7 @@ func add_controls() -> void:
 	var grab_hint := Label.new()
 	grab_hint.text = "Hold R1 or E beside or on the orange cube · Jump to lift the face you grabbed"
 	if use_dynamic_controller:
-		grab_hint.text = "Hold R1 or E to grab the orange cube or purple block. Jump to reach the blue wheel."
+		grab_hint.text = "Hold R1 or E to grab · Right-click to place cubes · Esc to finish placing"
 	panel.add_child(grab_hint)
 	if wheel != null:
 		var wheel_speed := SpinBox.new()
@@ -358,6 +399,11 @@ func add_controls() -> void:
 	recorder.status_changed.connect(update_recording_status)
 	interface.add_child(cube_controls)
 	cube_controls.property_changed.connect(adjust_cube)
+	if use_dynamic_controller:
+		placement = CubePlacement.new()
+		add_child(placement)
+		placement.configure(camera, interface)
+		placement.cube_placed.connect(spawn_cube)
 
 
 func start_recording() -> void:
@@ -389,6 +435,9 @@ func record_physics(delta: float, direction: float, raw_stick: float, jump_held:
 	var head: MeshInstance3D = motion.model.head
 	var dynamic := player as DynamicController
 	var grabbed: RigidBody3D = player.held_cube
+	var placed_states := {}
+	for body in placed_cubes:
+		placed_states[body.name] = cube_motion_state(body)
 	recorder.log_event("physics", {
 		"dt": delta,
 		"input": {
@@ -410,10 +459,8 @@ func record_physics(delta: float, direction: float, raw_stick: float, jump_held:
 			"simulated_move": dynamic.last_simulated_input.x if dynamic != null else null,
 			"simulated_jump_request": bool(dynamic.last_simulated_input.y) if dynamic != null else null,
 		},
-		"cube": {
-			"position": vector_values(cube.global_position), "velocity": vector_values(cube.linear_velocity),
-			"rotation_z": cube.rotation.z, "angular_velocity_z": cube.angular_velocity.z,
-		},
+		"cube": cube_motion_state(cube),
+		"placed_cubes": placed_states,
 		"wheel": {
 			"position": vector_values(wheel.global_position), "rotation_z": wheel.rotation.z,
 			"angular_velocity_z": wheel.angular_velocity.z, "target_speed": wheel.spin_speed,
@@ -429,6 +476,13 @@ func record_physics(delta: float, direction: float, raw_stick: float, jump_held:
 			"anchor_world": vector_values(grabbed.to_global(player.grip_anchor)) if grabbed != null else null,
 		},
 	})
+
+
+func cube_motion_state(body: GrabCube) -> Dictionary:
+	return {
+		"position": vector_values(body.global_position), "velocity": vector_values(body.linear_velocity),
+		"rotation_z": body.rotation.z, "angular_velocity_z": body.angular_velocity.z,
+	}
 
 
 func attachment_dynamics(dynamic: DynamicController) -> Variant:
@@ -459,6 +513,8 @@ func fixture_name(body: PhysicsBody3D) -> String:
 		return "cube"
 	if body == irregular:
 		return "irregular"
+	if body in placed_cubes:
+		return String(body.name)
 	return "terrain"
 
 

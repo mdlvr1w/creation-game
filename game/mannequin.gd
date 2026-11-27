@@ -12,6 +12,7 @@ const TORSO_CENTER := Vector3(0, 1.19, 0)
 const TORSO_SIZE := Vector3(0.81, 0.78, 0.52)
 const FACTOR_KEYS := ["size", "length", "thickness", "height_offset"]
 
+var pickable := true
 var limb_factors: Dictionary[StringName, Vector4] = {}
 var limb_meshes: Dictionary[StringName, MeshInstance3D] = {}
 var torso_factors := DEFAULT_FACTORS
@@ -98,6 +99,8 @@ func update_limb(limb_name: StringName, start: Vector3, rest_offset: Vector3,
 
 func add_pickable_capsule(part_name: StringName) -> MeshInstance3D:
 	var part := add_part(part_name, CapsuleMesh.new(), Vector3.ZERO)
+	if not pickable:
+		return part
 	var target := Area3D.new()
 	target.name = "PickTarget"
 	target.collision_mask = 0
@@ -118,9 +121,10 @@ func update_capsule(part: MeshInstance3D, start: Vector3, end: Vector3, radius: 
 	mesh.height = height
 	part.position = (start + end) * 0.5
 	part.quaternion = Quaternion(Vector3.UP, (end - start).normalized())
-	var shape := part.get_node("PickTarget/Capsule").shape as CapsuleShape3D
-	shape.radius = radius
-	shape.height = height
+	if pickable:
+		var shape := part.get_node("PickTarget/Capsule").shape as CapsuleShape3D
+		shape.radius = radius
+		shape.height = height
 
 
 func encode_proportions() -> String:

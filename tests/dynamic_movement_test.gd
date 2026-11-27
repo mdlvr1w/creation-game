@@ -82,6 +82,10 @@ func run() -> void:
 	await check_fast_wheel_release()
 
 	await check_irregular_fixture()
+	await check_incline_traction()
+	await check_moving_footing()
+	await check_jump_support()
+	await check_non_bouncy_landings()
 
 	if failures == 0:
 		print("Dynamic movement checks passed.")
@@ -145,6 +149,18 @@ func check_grab_facing() -> void:
 		check(least_facing > 1.4, "reversing a pull into a push keeps facing the cube")
 		check(player.held_cube == cube and player.grip_anchor == anchor and player.motion.hand_error() < 0.08,
 			"turning and reversing keep the same grip and visible hand contacts")
+
+		# Get back into a pull before leaving the ground, then hold the same input in the air.
+		await frames(20, -side, false, true)
+		var airborne := 0
+		var facing_during_jump := PI * 0.5
+		for frame in 24:
+			await frames(1, -side, true, true)
+			if not player.is_on_floor():
+				airborne += 1
+				facing_during_jump = minf(facing_during_jump, player.motion.rotation.y * side)
+		check(airborne >= 12 and facing_during_jump > 1.0 and player.held_cube == cube
+			and player.grip_anchor == anchor, "an airborne pull keeps facing the same attachment")
 
 
 func check_off_center_ride() -> void:
@@ -414,6 +430,172 @@ func check_irregular_fixture() -> void:
 	check(player.held_cube == null, "releasing the compound body clears the shared grip")
 
 
+func check_incline_traction() -> void:
+	var player = preview.player
+	for movable in [false, true]:
+		var surface := add_traction_surface(-0.24, movable)
+		preview.reset_sandbox()
+		player.position = surface.position + Vector3.UP * 0.22
+		await frames(90)
+		var at_rest := surface.to_local(player.position)
+		await frames(90)
+		check(player.support_body == surface and absf(surface.to_local(player.position).x - at_rest.x) < 0.04
+			and player.motion.stride < 0.03, "neutral input holds footing on a gentle incline")
+
+		for direction: float in [-1.0, 1.0]:
+			await frames(30)
+			var start := surface.to_local(player.position)
+			await frames(22, direction * 0.4)
+			var walk := (surface.to_local(player.position).x - start.x) * direction
+			check(player.support_body == surface and walk > 0.28 and player.motion.stride > 0.22,
+				"partial input walks and animates on the incline")
+			start = surface.to_local(player.position)
+			await frames(22, direction)
+			var run := (surface.to_local(player.position).x - start.x) * direction
+			check(player.support_body == surface and run > walk + 0.30 and player.motion.stride > 0.5,
+				"full input runs faster on the same incline")
+		surface.queue_free()
+		await frames(1)
+
+
+func check_moving_footing() -> void:
+	var player = preview.player
+	var platform := add_traction_surface(0.0, true) as RigidBody3D
+	preview.reset_sandbox()
+	player.position = platform.position + Vector3.UP * 0.22
+	await frames(40)
+	player.linear_velocity = Vector3.RIGHT * 2.5
+	platform.linear_velocity = player.linear_velocity
+	var start := platform.to_local(player.position)
+	await frames(36)
+	check(player.support_body == platform and absf(platform.to_local(player.position).x - start.x) < 0.04
+		and player.motion.stride < 0.03 and player.velocity.x > 2.0, "riding a moving support keeps the feet still")
+	var momentum := horizontal_momentum(player, platform)
+	var platform_speed := platform.linear_velocity.x
+	await frames(22, 0.8)
+	check(player.support_body == platform and player.velocity.x > platform.linear_velocity.x + 1.0
+		and platform.linear_velocity.x < platform_speed - 0.6,
+		"walking on a movable support sends momentum back through the feet")
+	var after := horizontal_momentum(player, platform)
+	check(absf(after - momentum) < 0.03, "traction conserves horizontal momentum on an unconstrained axis")
+	platform.queue_free()
+
+
+func horizontal_momentum(first: RigidBody3D, second: RigidBody3D) -> float:
+	# Read both velocities from the same solver snapshot.
+	var first_state := PhysicsServer3D.body_get_direct_state(first.get_rid())
+	var second_state := PhysicsServer3D.body_get_direct_state(second.get_rid())
+	return first.mass * first_state.linear_velocity.x + second.mass * second_state.linear_velocity.x
+
+
+func check_jump_support() -> void:
+	var player = preview.player
+	var cube = preview.cube
+	var floor_height := await measure_jump(35)
+	for weight in [0.25, 3.0, 30.0]:
+		preview.start_on_cube()
+		cube.mass = weight
+		await frames(50)
+		check(player.support_body == cube, "the grounded cube supports the takeoff")
+		var cube_height := await jump_rise(35)
+		check(absf(cube_height - floor_height) < 0.08, "floor-backed takeoff is independent of cube mass")
+
+	preview.reset_sandbox()
+	player.position = preview.irregular.position + Vector3(-0.44, 0.88, 0.0)
+	await frames(50)
+	check(player.support_body == preview.irregular, "the compound incline supports the takeoff")
+	var incline_height := await jump_rise(35)
+	check(absf(incline_height - floor_height) < 0.08, "another floor-backed shape gives the same full jump")
+
+	for count: int in [2, 5, 10]:
+		preview.reset_sandbox(true)
+		await frames(1)
+		for level in count:
+			preview.spawn_cube(Vector3(-20.0, preview.cube.HALF_SIZE + level * (preview.cube.SIZE + 0.01), 0.0))
+		var top: RigidBody3D = preview.placed_cubes[-1]
+		player.position = top.position + Vector3.UP * (preview.cube.HALF_SIZE + 0.05)
+		await frames(100)
+		check(player.support_body == top, "the player is standing on the top cube of a settled stack")
+		var stack_height := await jump_rise(35)
+		check(absf(stack_height - floor_height) < 0.09, "stable stacks give the same jump as terrain")
+	preview.reset_sandbox(true)
+	await frames(1)
+
+	var platform := add_traction_surface(0.0, true) as RigidBody3D
+	platform.axis_lock_linear_y = false
+	platform.freeze = true
+	preview.reset_sandbox()
+	player.position = platform.position + Vector3.UP * 0.22
+	await frames(40)
+	check(player.support_body == platform, "the unsupported-platform check starts with footing")
+	platform.freeze = false
+	await frames(3, 0.0, true)
+	check(player.velocity.y > 0.75 and player.velocity.y < player.settings.values.max_jump * 0.75
+		and platform.linear_velocity.y < -3.0, "an unbacked surface recoils and shares the jump impulse")
+	platform.queue_free()
+
+	await frames(1)
+
+	var plank := add_traction_surface(0.0, true) as RigidBody3D
+	plank.lock_rotation = false
+	plank.axis_lock_angular_x = true
+	plank.axis_lock_angular_y = true
+	plank.axis_lock_linear_x = true
+	plank.freeze = true
+	preview.reset_sandbox()
+	player.position = plank.position + Vector3(4.5, 0.22, 0.0)
+	await frames(40)
+	check(player.support_body == plank, "the tipping support starts under the player's feet")
+	plank.freeze = false
+	var tipping_height := await jump_rise(35)
+	check(tipping_height < floor_height - 0.2 and absf(plank.rotation.z) > 0.10,
+		"a surface can yield by rotating even when its center cannot move down")
+	plank.queue_free()
+
+
+func check_non_bouncy_landings() -> void:
+	var player = preview.player
+	var cube = preview.cube
+	for weight in [0.25, 3.0, 30.0]:
+		preview.reset_sandbox()
+		cube.mass = weight
+		cube.adjust_property(&"bounce", 0.0)
+		await frames(35)
+		var surface_height: float = cube.position.y
+		player.position = cube.position + Vector3.UP * 3.2
+		var highest := surface_height
+		var touched := false
+		for frame in 85:
+			await frames(1)
+			touched = touched or player.support_body == cube
+			highest = maxf(highest, cube.position.y)
+		check(touched and highest - surface_height < 0.025, "a zero-bounce cube stays down on a centered landing")
+
+
+func add_traction_surface(grade: float, movable: bool) -> PhysicsBody3D:
+	var surface: PhysicsBody3D = RigidBody3D.new() if movable else StaticBody3D.new()
+	if surface is RigidBody3D:
+		# Isolate horizontal motion so ground friction and tipping cannot hide impulse exchange.
+		surface.mass = 3.5
+		surface.lock_rotation = true
+		surface.axis_lock_linear_y = true
+		surface.axis_lock_linear_z = true
+		surface.gravity_scale = 0.0
+		surface.linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
+		surface.linear_damp = 0.0
+	surface.collision_layer = 2
+	surface.collision_mask = 1
+	surface.position = Vector3(-24.0, 3.2, 0.0)
+	var collider := CollisionShape3D.new()
+	var slab := BoxShape3D.new()
+	slab.size = Vector3(14.0, 0.24, 1.4)
+	collider.shape = slab
+	collider.rotation.z = grade
+	surface.add_child(collider)
+	preview.add_child(surface)
+	return surface
+
+
 func frames(count: int, direction := 0.0, jump := false, grab := false) -> void:
 	for frame in count:
 		await physics_frame
@@ -424,11 +606,16 @@ func frames(count: int, direction := 0.0, jump := false, grab := false) -> void:
 func measure_jump(hold_frames: int) -> float:
 	preview.reset_sandbox()
 	await frames(20)
-	var apex := 0.0
+	return await jump_rise(hold_frames)
+
+
+func jump_rise(hold_frames: int) -> float:
+	var start_height: float = preview.player.position.y
+	var apex := start_height
 	for frame in 65:
 		await frames(1, 0.0, frame < hold_frames)
 		apex = maxf(apex, preview.player.position.y)
-	return apex
+	return apex - start_height
 
 
 func push_for_distance(cube_mass: float) -> float:

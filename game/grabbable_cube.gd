@@ -1,6 +1,8 @@
 extends RigidBody3D
 
 const HALF_SIZE := 0.675
+const SIZE := HALF_SIZE * 2.0
+const COLOR := Color("#c88549")
 
 var start := Vector3(-3.7, HALF_SIZE + 0.02, 0)
 
@@ -18,7 +20,7 @@ func _ready() -> void:
 	physics_material_override.friction = 0.34
 	var collider := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3.ONE * HALF_SIZE * 2.0
+	shape.size = Vector3.ONE * SIZE
 	collider.shape = shape
 	add_child(collider)
 
@@ -27,7 +29,7 @@ func _ready() -> void:
 	var visual := MeshInstance3D.new()
 	visual.mesh = mesh
 	var material := StandardMaterial3D.new()
-	material.albedo_color = Color("#c88549")
+	material.albedo_color = COLOR
 	material.roughness = 0.85
 	visual.material_override = material
 	add_child(visual)

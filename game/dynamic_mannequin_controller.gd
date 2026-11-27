@@ -11,6 +11,9 @@ const GRIP_DAMPING := 100.0
 const GRIP_FORCE := 550.0
 const GRIP_ENGAGEMENT_TIME := 0.06
 const CAPSULE_HEIGHT := 1.75
+const FOOT_HOLD_RESPONSE := 0.25
+const TAKEOFF_TIME := 0.07
+const TAKEOFF_EXTENSION := 0.28
 
 @export var drive_strength := 145.0
 @export var drive_response := 0.12
@@ -24,11 +27,21 @@ var jump_held := false
 var jump_requested := false
 var jump_was_held := false
 var can_cut_jump := false
+var jump_surface: RigidBody3D
+var jump_contact := Vector3.ZERO
+var jump_start_height := 0.0
+var jump_foot_height := 0.0
+var jump_foot_speed := 0.0
+var jump_speed := 0.0
+var jump_age := 0.0
+var jump_spent := 0.0
 var floor_normal := Vector3.ZERO
 var support_velocity := Vector3.ZERO
 var support_body: PhysicsBody3D
 var support_position := Vector3.ZERO
-var support_relative_y := 0.0
+var support_travel_speed := 0.0
+var support_local_position := Vector3.ZERO
+var support_creep := 0.0
 
 var held_cube: RigidBody3D
 var grip_anchor := Vector3.ZERO
@@ -94,11 +107,10 @@ func step(delta: float, move_intent: float, jump_down: bool, jump_pressed := fal
 	gravity_scale = settings.values.gravity / world_gravity
 	update_physical_crouch(delta)
 	motion.travel_speed = linear_velocity.x
-	var visual_velocity := linear_velocity
-	if is_on_floor():
-		visual_velocity.x -= support_velocity.x
-	motion.animate(delta, visual_velocity, is_on_floor(), settings.values.max_speed, settings.values.lean_degrees,
-		direction, target_speed())
+	var grounded := is_on_floor()
+	var relative_velocity := linear_velocity - support_velocity if grounded else linear_velocity
+	motion.animate(delta, relative_velocity, grounded, settings.values.max_speed, settings.values.lean_degrees,
+		direction, target_speed(), support_travel_speed)
 
 
 func update_physical_crouch(delta: float) -> void:
@@ -145,15 +157,17 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	last_simulated_input = Vector2(direction, float(jump_requested))
 	last_takeoff_impulse = Vector3.ZERO
 	apply_drive(state)
-	if jump_requested and support_body != null and support_relative_y < 0.8:
-		takeoff(state)
+	var started_jump := jump_requested and jump_surface == null and support_body != null and takeoff(state)
+	if started_jump:
 		can_cut_jump = jump_held
-	elif can_cut_jump and not jump_held and state.linear_velocity.y > settings.values.min_jump:
-		var cut: float = settings.values.min_jump - state.linear_velocity.y
-		state.apply_central_impulse(Vector3.UP * cut * mass)
-		can_cut_jump = false
-	elif not jump_held or state.linear_velocity.y <= 0.0:
-		can_cut_jump = false
+	else:
+		continue_takeoff(state)
+		if can_cut_jump and not jump_held and state.linear_velocity.y > settings.values.min_jump:
+			var cut: float = settings.values.min_jump - state.linear_velocity.y
+			state.apply_central_impulse(Vector3.UP * cut * mass)
+			can_cut_jump = false
+		elif not jump_held or state.linear_velocity.y <= 0.0:
+			can_cut_jump = false
 	jump_requested = false
 
 	last_grip_force = Vector3.ZERO
@@ -164,10 +178,10 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 
 
 func read_support(state: PhysicsDirectBodyState3D) -> void:
+	var previous_support := support_body
 	support_body = null
 	floor_normal = Vector3.ZERO
 	support_velocity = Vector3.ZERO
-	support_relative_y = 0.0
 	var best_normal := 0.70
 	near_grip_footing = false
 	last_support_impulse = 0.0
@@ -185,48 +199,154 @@ func read_support(state: PhysicsDirectBodyState3D) -> void:
 		floor_normal = normal
 		support_position = state.get_contact_collider_position(index)
 		support_velocity = state.get_contact_collider_velocity_at_position(index)
-		support_relative_y = state.linear_velocity.y - support_velocity.y
+
+	support_travel_speed = 0.0
+	if support_body != previous_support:
+		support_creep = 0.0
+	if is_on_floor():
+		var axis := support_tangent()
+		var origin := state.transform.origin
+		if support_body == previous_support:
+			# Measure travel after the contact solver has finished moving both bodies.
+			support_travel_speed = (origin - support_body.to_global(support_local_position)).dot(axis) / state.step
+		else:
+			support_travel_speed = (state.linear_velocity - support_velocity).dot(axis)
+		support_local_position = support_body.to_local(origin)
 
 
 func target_speed() -> float:
 	return signf(direction) * lerpf(settings.values.min_speed, settings.values.max_speed, absf(direction))
 
 
+func support_tangent() -> Vector3:
+	return Vector3(floor_normal.y, -floor_normal.x, 0.0).normalized()
+
+
 func apply_drive(state: PhysicsDirectBodyState3D) -> void:
-	var tuning := settings.values
 	last_drive_speed = target_speed()
-	if not is_on_floor() and (held_cube != null or (grip_launch and is_zero_approx(direction))):
+	var grounded := is_on_floor()
+	if not grounded and (held_cube != null or (grip_launch and is_zero_approx(direction))):
 		last_drive_impulse = Vector3.ZERO
 		return
+	var axis := support_tangent() if grounded else Vector3.RIGHT
 	var drive_budget := drive_strength
 	var response := braking_response if is_zero_approx(direction) else drive_response
-	if support_body is RigidBody3D:
-		# Dynamic footing has less traction than solid ground and can give way.
-		drive_budget *= 0.40
-		response *= 1.6
-	elif not is_on_floor():
+	if not grounded:
 		var drag_floor := 0.0 if is_zero_approx(direction) else 0.15
-		drive_budget *= lerpf(1.0, drag_floor, tuning.air_inertia / 100.0)
+		drive_budget *= lerpf(1.0, drag_floor, settings.values.air_inertia / 100.0)
 
-	var difference := last_drive_speed - (state.linear_velocity.x - support_velocity.x)
-	var impulse := clampf(difference * mass * state.step / response, -drive_budget * state.step, drive_budget * state.step)
-	last_drive_impulse = Vector3(impulse, 0, 0)
+	var relative_speed := support_travel_speed if grounded else state.linear_velocity.x
+	var speed_error := last_drive_speed - relative_speed
+	if grounded and is_zero_approx(direction):
+		# Remove steady drift against the support without storing an unlimited correction.
+		var hold_weight := 1.0 - smoothstep(0.20, 0.70, absf(relative_speed))
+		var creep_limit := drive_budget * response * FOOT_HOLD_RESPONSE / mass
+		support_creep = clampf((support_creep + relative_speed * state.step) * hold_weight, -creep_limit, creep_limit)
+		speed_error -= support_creep / FOOT_HOLD_RESPONSE
+	else:
+		support_creep = 0.0
+	var force := speed_error * mass / response
+	if grounded:
+		# A very light support can change relative speed sharply under a single drive impulse.
+		var inverse_mass := state.inverse_mass + support_inverse_mass(axis)
+		var correction_limit := absf(speed_error) / (inverse_mass * state.step)
+		force = clampf(force, -correction_limit, correction_limit)
+		# Support the character against its weight along the contact, within the walking force budget.
+		force -= state.total_gravity.dot(axis) * mass
+	var impulse := clampf(force, -drive_budget, drive_budget) * state.step
+	last_drive_impulse = axis * impulse
 	state.apply_central_impulse(last_drive_impulse)
-	# Traction against a movable support exchanges momentum at the foot contact.
+	# The same traction acts back on a finite-mass surface at the foot contact.
 	if support_body is RigidBody3D:
 		support_body.apply_impulse(-last_drive_impulse, support_position - support_body.global_position)
 
 
-func takeoff(state: PhysicsDirectBodyState3D) -> void:
+func support_inverse_mass(axis: Vector3) -> float:
+	var body := support_body as RigidBody3D
+	if body == null or body.freeze:
+		return 0.0
+	var linear_axis := Vector3(0.0 if body.axis_lock_linear_x else axis.x,
+		0.0 if body.axis_lock_linear_y else axis.y, 0.0)
+	var inverse_mass := linear_axis.length_squared() / body.mass
+	if not body.lock_rotation and not body.axis_lock_angular_z:
+		var support_state := PhysicsServer3D.body_get_direct_state(body.get_rid())
+		if support_state != null:
+			var center := support_state.transform * support_state.center_of_mass_local
+			var lever := (support_position - center).cross(axis).z
+			inverse_mass += lever * lever * support_state.inverse_inertia_tensor.z.z
+	return inverse_mass
+
+
+func takeoff(state: PhysicsDirectBodyState3D) -> bool:
+	var surface := support_body as RigidBody3D
+	var foot_speed := support_velocity.y
+	var moving_surface := surface != null and not surface.freeze
+	if moving_surface:
+		foot_speed = surface_speed_at(surface, support_position)
+	var relative_speed := state.linear_velocity.y - foot_speed
+	if relative_speed >= 0.8:
+		return false
+
 	var launch_speed: float = settings.values.max_jump if jump_held else settings.values.min_jump
-	var effective_mass := mass
-	if support_body is RigidBody3D and not support_body.freeze:
-		effective_mass = 1.0 / (state.inverse_mass + 1.0 / support_body.mass)
-	var impulse := Vector3.UP * (maxf(0.0, launch_speed - support_relative_y) * effective_mass)
+	var speed_change := maxf(0.0, launch_speed - relative_speed)
+	var inverse_mass := state.inverse_mass + support_inverse_mass(Vector3.UP)
+	var impulse := speed_change / inverse_mass
+	# Start with a pulse safe for a freely recoiling surface, then read its solved response.
+	# When the same surface is in the hands, the tether already couples the two bodies.
+	if moving_surface and surface != held_cube:
+		jump_surface = surface
+		jump_contact = surface.to_local(support_position)
+		jump_start_height = state.transform.origin.y
+		jump_foot_height = support_position.y
+		jump_foot_speed = foot_speed
+		jump_speed = launch_speed
+		jump_age = 0.0
+		impulse = minf(impulse, launch_speed * mass * 0.5)
+		jump_spent = impulse
+	push_off(state, surface, support_position, impulse)
+	return true
+
+
+func continue_takeoff(state: PhysicsDirectBodyState3D) -> void:
+	if not is_instance_valid(jump_surface):
+		jump_surface = null
+		return
+	jump_age += state.step
+	var contact := jump_surface.to_global(jump_contact)
+	var rise := state.transform.origin.y - jump_start_height
+	if jump_age > TAKEOFF_TIME or rise - (contact.y - jump_foot_height) > TAKEOFF_EXTENSION:
+		jump_surface = null
+		return
+	# Foot displacement includes the solver's response through contacts and joints below it.
+	var settled_speed := (contact.y - jump_foot_height) / jump_age
+	var measured_speed := minf(settled_speed, surface_speed_at(jump_surface, contact))
+	var recoil := maxf(0.0, jump_foot_speed - measured_speed - 0.12)
+	if not jump_held:
+		jump_speed = minf(jump_speed, settings.values.min_jump)
+	var height_from_carrier := maxf(0.0, rise - jump_foot_speed * jump_age)
+	var remaining_speed := sqrt(maxf(0.0, jump_speed * jump_speed + 2.0 * state.total_gravity.y * height_from_carrier))
+	var speed_change := remaining_speed + jump_foot_speed - recoil - state.linear_velocity.y
+	if speed_change <= 0.0:
+		jump_surface = null
+		return
+	var inverse_mass := state.inverse_mass + recoil / maxf(jump_spent, 0.01)
+	var impulse := minf(speed_change / inverse_mass, jump_speed * mass * 0.5)
+	push_off(state, jump_surface, contact, impulse)
+	jump_spent += impulse
+
+
+func surface_speed_at(surface: RigidBody3D, point: Vector3) -> float:
+	var direct := PhysicsServer3D.body_get_direct_state(surface.get_rid())
+	var center := surface.global_position if direct == null else direct.transform * direct.center_of_mass_local
+	return (surface.linear_velocity + surface.angular_velocity.cross(point - center)).y
+
+
+func push_off(state: PhysicsDirectBodyState3D, surface: RigidBody3D, contact: Vector3, amount: float) -> void:
+	var impulse := Vector3.UP * amount
 	last_takeoff_impulse = impulse
 	state.apply_central_impulse(impulse)
-	if support_body is RigidBody3D:
-		support_body.apply_impulse(-impulse, support_position - support_body.global_position)
+	if surface != null:
+		surface.apply_impulse(-impulse, contact - surface.global_position)
 
 
 func update_balance(state: PhysicsDirectBodyState3D) -> void:
@@ -368,10 +488,13 @@ func reset() -> void:
 	set_physical_crouch(0.0)
 	support_body = null
 	support_velocity = Vector3.ZERO
+	support_travel_speed = 0.0
+	support_creep = 0.0
 	floor_normal = Vector3.ZERO
 	direction = 0.0
 	jump_requested = false
 	can_cut_jump = false
+	jump_surface = null
 	transform = Transform3D(Basis.IDENTITY, Vector3(0, 0.02, 0))
 	grip_launch = false
 	linear_velocity = Vector3.ZERO

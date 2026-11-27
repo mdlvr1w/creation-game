@@ -33,6 +33,7 @@ func configure(body: PhysicsBody3D, feet: PhysicsBody3D, use_links: bool, propor
 	footing = feet
 	articulated = use_links
 	model = Mannequin.new()
+	model.pickable = false
 	add_child(model)
 	model.decode_proportions(proportions)
 	for part: StringName in model.limb_meshes:
