@@ -72,6 +72,8 @@ func run() -> void:
 		cube.apply_central_force(Vector3.LEFT * 105.0)
 		await frames(1, 0.0, false, true)
 	check(player.position.x < start_x - 0.12, "a moving cube can still carry the figurine")
+	await check_quiet_acquisition()
+	await check_close_cube_release()
 	await check_off_center_ride()
 	await check_gentle_wheel_catch()
 	await check_slow_wheel_footing()
@@ -83,6 +85,38 @@ func run() -> void:
 	if failures == 0:
 		print("Dynamic movement checks passed.")
 	quit(int(failures > 0))
+
+
+func check_quiet_acquisition() -> void:
+	var player = preview.player
+	var cube = preview.cube
+	for distance in [1.05, 1.30]:
+		preview.reset_sandbox()
+		cube.position.x = -distance
+		await frames(28)
+		var peak_force := 0.0
+		var peak_speed := 0.0
+		for frame in 18:
+			await frames(1, 0.0, false, true)
+			peak_force = maxf(peak_force, player.last_grip_force.length())
+			peak_speed = maxf(peak_speed, cube.linear_velocity.length())
+		check(player.held_cube == cube and peak_force < 2.0 and peak_speed < 0.02,
+			"a neutral grab takes hold without kicking a stationary cube")
+
+
+func check_close_cube_release() -> void:
+	preview.reset_sandbox()
+	var player = preview.player
+	var cube = preview.cube
+	cube.position.x = -1.05
+	await frames(24)
+	await frames(6, -1.0)
+	await frames(5, -1.0, false, true)
+	check(player.held_cube == cube, "the close release test starts with a grip")
+	var before_release: float = player.position.y
+	await frames(6, -1.0)
+	check(player.held_cube == null and absf(player.position.y - before_release) < 0.08
+		and player.is_on_floor(), "releasing during a close push keeps the body on the ground")
 
 
 func check_off_center_ride() -> void:
@@ -283,17 +317,21 @@ func check_fast_wheel_release() -> void:
 		return
 	check(absf(player.rotation.z) > 0.18, "release starts while the body is tilted")
 	var launch: Vector3 = player.velocity
+	var release_roll: float = player.rotation.z
 	player.update_grip(wheel, false)
 	await frames(1)
-	check(player.lock_rotation and absf(player.rotation.z) < 0.01, "releasing returns upright in the air")
+	check(absf(angle_difference(release_roll, player.rotation.z)) < 0.15
+		and absf(player.rotation.z) > 0.05, "releasing does not snap rotation")
 	check(absf(player.velocity.x - launch.x) < 0.05
 		and absf(player.velocity.y - (launch.y - player.settings.values.gravity * DT)) < 0.06,
 		"straightening preserves launch velocity apart from gravity")
 	await frames(6)
 	check(not player.is_on_floor() and absf(player.velocity.x - launch.x) < 0.06,
 		"neutral input does not brake the airborne launch")
-	await frames(140)
-	check(player.is_on_floor() and absf(player.rotation.z) < 0.01, "the launch lands upright")
+	await frames(20)
+	check(absf(player.rotation.z) < 0.05, "balance promptly brings the released body upright")
+	await frames(120)
+	check(player.is_on_floor() and absf(player.rotation.z) < 0.025, "the launch lands upright")
 	await frames(15, -0.6)
 	check(player.velocity.x < -0.8, "walking is available after landing")
 
