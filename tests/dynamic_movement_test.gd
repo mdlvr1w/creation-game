@@ -73,6 +73,12 @@ func run() -> void:
 		await frames(1, 0.0, false, true)
 	check(player.position.x < start_x - 0.12, "a moving cube can still carry the figurine")
 	await check_off_center_ride()
+	await check_gentle_wheel_catch()
+	await check_slow_wheel_footing()
+	await check_rotating_wheel()
+	await check_fast_wheel_release()
+
+	await check_irregular_fixture()
 
 	if failures == 0:
 		print("Dynamic movement checks passed.")
@@ -97,6 +103,235 @@ func check_off_center_ride() -> void:
 	check(peak_speed < 7.0, "a small stick tilt does not produce runaway lateral motion")
 	await frames(60, 0.0, false, true)
 	check(absf(cube.linear_velocity.x) < 0.8, "the cube settles after steering stops")
+
+
+func check_gentle_wheel_catch() -> void:
+	var player = preview.player
+	var wheel = preview.wheel
+	player.settings.values.gravity = 17.6
+	player.settings.values.max_jump = 7.5
+	player.settings.values.min_jump = 2.5
+	for speed in [0.0, 0.8]:
+		preview.reset_sandbox()
+		wheel.spin_speed = speed
+		player.position.x = wheel.position.x
+		await frames(24)
+		var caught := -1
+		var anchor := Vector3.ZERO
+		var peak_roll := 0.0
+		var touched_upper_tread := false
+		for frame in 480:
+			await wheel_frame(frame < 9)
+			if player.held_cube != wheel:
+				continue
+			if caught < 0:
+				caught = frame
+				anchor = player.grip_anchor
+			if frame - caught <= 60:
+				peak_roll = maxf(peak_roll, absf(player.rotation.z))
+			touched_upper_tread = touched_upper_tread or (
+				player.support_body == wheel and player.position.y > wheel.position.y)
+		check(caught >= 0 and player.held_cube == wheel and player.grip_anchor == anchor,
+			"the gentle catch maintains the original grip")
+		check(peak_roll < deg_to_rad(30.0), "the initial stationary or slow catch stays predominantly upright")
+		if speed > 0.0:
+			check(touched_upper_tread, "the body makes contact on the upper tread during a slow hold")
+	wheel.spin_speed = 0.82
+
+
+func check_slow_wheel_footing() -> void:
+	preview.reset_sandbox()
+	var player = preview.player
+	var wheel = preview.wheel
+	wheel.spin_speed = 0.4
+	player.position.x = wheel.position.x + 0.07
+	await frames(24)
+	var caught := false
+	var anchor := Vector3.ZERO
+	var travel := 0.0
+	var last_angle: float = wheel.rotation.z
+	var peak_roll := 0.0
+	var load_frames := 0
+	var hanging_again := false
+	for frame in 1240:
+		await physics_frame
+		player.update_grip(wheel, frame >= 6)
+		player.step(DT, 0.0, frame < 4)
+		if not caught and player.held_cube == wheel:
+			caught = true
+			anchor = player.grip_anchor
+			last_angle = wheel.rotation.z
+		if not caught or player.held_cube != wheel:
+			continue
+		travel += absf(angle_difference(last_angle, wheel.rotation.z))
+		last_angle = wheel.rotation.z
+		peak_roll = maxf(peak_roll, absf(player.rotation.z))
+		if player.support_body == wheel and player.last_support_impulse > 0.5 				and absf(player.rotation.z) < deg_to_rad(30.0) and player.physical_crouch > 0.2:
+			load_frames += 1
+		if load_frames > 0 and not player.is_on_floor() and player.physical_crouch < 0.01:
+			hanging_again = true
+	check(caught and player.held_cube == wheel and player.grip_anchor == anchor and travel > TAU,
+		"the slow crossing keeps one rim point through a full revolution")
+	check(load_frames > 30 and hanging_again and peak_roll < deg_to_rad(50.0),
+		"the crouch carries load at the crown and gives way to hanging without inversion")
+	wheel.spin_speed = 0.82
+
+
+func check_rotating_wheel() -> void:
+	preview.reset_sandbox()
+	var player = preview.player
+	var wheel = preview.wheel
+	player.settings.values.gravity = 17.6
+	player.settings.values.max_jump = 7.5
+	player.position.x = wheel.position.x
+	await frames(24)
+	player.update_grip(wheel, true)
+	check(player.held_cube == null, "the rim requires a jump from the floor")
+
+	for frame in 32:
+		await wheel_frame(true)
+		if player.held_cube == wheel:
+			break
+	check(player.held_cube == wheel, "a jump can catch the rim")
+	if player.held_cube != wheel:
+		return
+	var anchor: Vector3 = player.grip_anchor
+	var slow_roll := 0.0
+	var fast_roll := 0.0
+	var body_top := 0.0
+	var lateral_span := Vector2.ZERO
+	var hand_error := 0.0
+	for frame in 880:
+		if frame == 550:
+			wheel.spin_speed = 2.0
+		await wheel_frame(frame < 26)
+		if frame > 6 and player.held_cube == wheel:
+			hand_error = maxf(hand_error, player.motion.hand_error())
+		if frame < 550:
+			slow_roll = maxf(slow_roll, absf(player.rotation.z))
+			body_top = maxf(body_top, player.position.y)
+			var offset_x: float = player.position.x - wheel.position.x
+			lateral_span.x = minf(lateral_span.x, offset_x)
+			lateral_span.y = maxf(lateral_span.y, offset_x)
+		else:
+			fast_roll = maxf(fast_roll, absf(player.rotation.z))
+	check(player.held_cube == wheel and player.grip_anchor == anchor,
+		"the same hand holds the same point through slow and faster turns")
+	check(is_zero_approx(wheel.position.z) and is_zero_approx(anchor.z),
+		"the wheel and the held point are centered on the movement plane")
+	check(body_top > wheel.position.y - 0.65 and lateral_span.x < -0.5 and lateral_span.y > 0.5,
+		"the body rises and is carried around both sides of the axle")
+	check(slow_roll > 0.04 and fast_roll > 0.12, "the body visibly responds at both wheel speeds")
+	check(hand_error < 0.08, "the visible forearm stays at the rim")
+
+	for frame in 220:
+		if wheel.to_global(anchor).y < wheel.position.y - 1.48:
+			break
+		await wheel_frame()
+	wheel.spin_speed = 0.0
+	for frame in 360:
+		await wheel_frame()
+	var ledge := StaticBody3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(3.0, 0.2, 2.0)
+	var collider := CollisionShape3D.new()
+	collider.shape = shape
+	ledge.add_child(collider)
+	ledge.position = Vector3(player.position.x, player.position.y + 0.08, 0.0)
+	preview.add_child(ledge)
+	for frame in 50:
+		await wheel_frame()
+	check(player.support_body == ledge and player.held_cube == wheel, "the feet find support during the same hold")
+	ledge.queue_free()
+	for frame in 35:
+		await wheel_frame()
+	check(not player.is_on_floor() and player.held_cube == wheel and player.grip_anchor == anchor,
+		"removing footing returns to hanging without changing the grip")
+	player.update_grip(wheel, false)
+	check(player.held_cube == null, "releasing the button releases the wheel")
+
+
+func check_fast_wheel_release() -> void:
+	preview.reset_sandbox()
+	var player = preview.player
+	var wheel = preview.wheel
+	wheel.spin_speed = 4.0
+	player.position.x = wheel.position.x
+	await frames(24)
+	var anchor := Vector3.ZERO
+	var caught := false
+	var travel := 0.0
+	var previous_angle := 0.0
+	var peak_error := 0.0
+	for frame in 300:
+		await wheel_frame(frame < 9)
+		if player.held_cube != wheel:
+			continue
+		if not caught:
+			anchor = player.grip_anchor
+			caught = true
+			previous_angle = wheel.rotation.z
+		travel += absf(angle_difference(previous_angle, wheel.rotation.z))
+		previous_angle = wheel.rotation.z
+		peak_error = maxf(peak_error, player.motion.hand_error())
+		if travel > TAU and absf(player.rotation.z) > 0.18 and player.position.y > 2.0:
+			break
+	check(player.held_cube == wheel and travel > TAU and player.grip_anchor == anchor
+		and caught, "a grab at full speed survives a complete turn")
+	check(peak_error < 0.08, "the fast grip keeps both visible hands near the rim")
+	if player.held_cube != wheel:
+		return
+	check(absf(player.rotation.z) > 0.18, "release starts while the body is tilted")
+	var launch: Vector3 = player.velocity
+	player.update_grip(wheel, false)
+	await frames(1)
+	check(player.lock_rotation and absf(player.rotation.z) < 0.01, "releasing returns upright in the air")
+	check(absf(player.velocity.x - launch.x) < 0.05
+		and absf(player.velocity.y - (launch.y - player.settings.values.gravity * DT)) < 0.06,
+		"straightening preserves launch velocity apart from gravity")
+	await frames(6)
+	check(not player.is_on_floor() and absf(player.velocity.x - launch.x) < 0.06,
+		"neutral input does not brake the airborne launch")
+	await frames(140)
+	check(player.is_on_floor() and absf(player.rotation.z) < 0.01, "the launch lands upright")
+	await frames(15, -0.6)
+	check(player.velocity.x < -0.8, "walking is available after landing")
+
+
+func wheel_frame(jump := false) -> void:
+	await physics_frame
+	preview.player.update_grip(preview.wheel, true)
+	preview.player.step(DT, 0.0, jump)
+
+
+func check_irregular_fixture() -> void:
+	preview.reset_sandbox()
+	var player = preview.player
+	var fixture: RigidBody3D = preview.irregular
+	player.position = fixture.position + Vector3(0.43, 0.41, 0.0)
+	await frames(22)
+	check(player.support_body == fixture and player.last_support_impulse > 0.0,
+		"the compound fixture provides load-bearing support")
+	var targets: Array[RigidBody3D] = [preview.cube, preview.wheel, fixture]
+	for frame in 35:
+		await physics_frame
+		player.update_grip_candidates(targets, true)
+		player.step(DT, 0.0, false)
+	check(player.held_cube == fixture and player.last_shared_support,
+		"shared acquisition catches a supported compound body")
+	if player.held_cube != fixture:
+		return
+	var anchor: Vector3 = player.grip_anchor
+	check(player.motion.hand_error() < 0.16, "both hands reach the compound fixture")
+	fixture.apply_impulse(Vector3.RIGHT * 2.0, Vector3.UP * 0.45)
+	for frame in 60:
+		await physics_frame
+		player.update_grip_candidates(targets, true)
+		player.step(DT, 0.0, false)
+	check(player.held_cube == fixture and player.grip_anchor == anchor,
+		"moving the compound body preserves its local attachment")
+	player.update_grip_candidates(targets, false)
+	check(player.held_cube == null, "releasing the compound body clears the shared grip")
 
 
 func frames(count: int, direction := 0.0, jump := false, grab := false) -> void:

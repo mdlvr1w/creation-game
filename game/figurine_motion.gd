@@ -1,6 +1,5 @@
 extends Node3D
 ## Applies a simple velocity-driven pose to the visual model. Collision is independent.
-const GrabCube := preload("res://game/grabbable_cube.gd")
 
 var model: Node3D
 var rest: Dictionary[StringName, Transform3D] = {}
@@ -8,20 +7,24 @@ var phase := 0.0
 var stride := 0.0
 var air_pose := 0.0
 var facing := 1.0
-var grip_cube: GrabCube
-var reach_cube: GrabCube
+var grip_cube: RigidBody3D
+var reach_cube: RigidBody3D
 var grip_side := 0.0
 var grip_anchor := Vector3.ZERO
 var grip_normal := Vector3.RIGHT
 var grip_blend := 0.0
+var shared_attachment := false
+var travel_speed := 0.0
 var grip_start_yaw := 0.0
 var grip_lateral := Vector3.BACK
 var reach_lowering := 0.0
+var physical_crouch := 0.0
 var reach_pitch := 0.0
 var lean := 0.0
 var head_look_target := Vector3.ZERO
 var head_look := Vector3.ZERO
 var lean_axes: Array[Vector3] = []
+const MAX_GRIP_STRETCH := 1.85
 const BODY_LOOK_SHARE := 0.34
 const AIR_STEERING_POSE_SHARE := 0.42
 const UPPER_BODY := [&"Torso", &"Neck", &"Head"]
@@ -45,12 +48,16 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 	stride = move_toward(stride, pace if grounded else 0.0, delta * 5.0)
 	air_pose = move_toward(air_pose, 0.0 if grounded else 1.0, delta * 6.0)
 	var grabbing := is_instance_valid(grip_cube)
+	var shared_hold := grabbing and shared_attachment
 	if grabbing:
 		reach_cube = grip_cube
 	grip_blend = move_toward(grip_blend, 1.0 if grabbing else 0.0, delta * 7.0)
 	if grounded:
 		var stride_speed := velocity.x * grip_side if grabbing else speed
 		phase = fposmod(phase + stride_speed * delta * 2.2, TAU)
+	if shared_hold and not grounded:
+		stride = move_toward(stride, absf(direction), delta * 6.0)
+		phase = fposmod(phase + direction * delta * 8.0, TAU)
 	if speed > 0.12:
 		facing = signf(velocity.x)
 	var turn_extent := lerpf(0.22, 1.05, maxf(pace, air_pose * 0.65))
@@ -60,7 +67,12 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 	head_look = head_look.lerp(head_look_target, 1.0 - exp(-delta * 12.0))
 	var look_yaw := head_look.y * BODY_LOOK_SHARE
 	var yaw := turn + look_yaw
-	if grabbing:
+	if shared_attachment:
+		var carried_turn := signf(travel_speed) * PI * 0.5 * smoothstep(0.2, max_speed, absf(travel_speed))
+		yaw = carried_turn + look_yaw
+		if not grounded:
+			yaw += direction * AIR_STEERING_POSE_SHARE * (1.0 - absf(carried_turn) / (PI * 0.5))
+	elif grabbing:
 		var anchor_offset := grip_cube.to_global(grip_anchor) - global_position
 		var lateral_weight := smoothstep(0.25, 0.55, absf(anchor_offset.x))
 		yaw = lerp_angle(grip_start_yaw, signf(anchor_offset.x) * PI * 0.5, lateral_weight)
@@ -76,24 +88,36 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 	var hip_center := (lean_axes[0] + lean_axes[1]) * 0.5
 	var body_lean := supported_reach_pose(delta, grounded, hip_center)
 	var foot_plant := clampf(reach_lowering * 12.0, 0.0, 1.0)
+	if shared_attachment:
+		# Keep the center of the shoulders aligned with the body-side attachment.
+		var shoulder := model.transform.affine_inverse() * ((rest_shoulder("Left") + rest_shoulder("Right")) * 0.5)
+		var pitch := lean + minf(physical_crouch * 0.65, 0.40)
+		body_lean = rotation_about(shoulder, pitch)
+		body_lean.origin.y -= physical_crouch
+		foot_plant = clampf(physical_crouch * 12.0, 0.0, 1.0)
 	for part in UPPER_BODY:
 		model.get_node(NodePath(String(part))).transform = body_lean * rest[part]
 
 	var head_rest := rest[&"Head"]
 	var pivot := head_rest.origin - Vector3.UP * head_rest.basis.y.length() * 0.5
 	var turn_head := Basis.from_euler(head_look - Vector3.UP * look_yaw)
-	model.get_node("Head").transform = body_lean * Transform3D(turn_head, pivot - turn_head * pivot) * head_rest
+	var head_pose := body_lean * Transform3D(turn_head, pivot - turn_head * pivot) * head_rest
+	if shared_attachment:
+		var head_basis := turn_head * head_rest.basis
+		head_pose = Transform3D(head_basis, body_lean * pivot + turn_head * (head_rest.origin - pivot))
+	model.get_node("Head").transform = head_pose
 
 	var swing := sin(phase) * stride
 	for side in ["Left", "Right"]:
 		var cycle := swing if side == "Left" else -swing
 		var tuck := clampf(0.18 + velocity.y * 0.02, 0.08, 0.32) * air_pose
-		pose_pair(side + "UpperLeg", side + "LowerLeg", cycle * 0.48 - tuck,
-			maxf(0.0, cycle) * 0.5 + tuck * 1.5)
+		var gait := 1.0 - foot_plant if shared_attachment else 1.0
+		pose_pair(side + "UpperLeg", side + "LowerLeg", (cycle * 0.48 - tuck) * gait,
+			(maxf(0.0, cycle) * 0.5 + tuck * 1.5) * gait)
 		if foot_plant > 0.0:
 			bend_knee(side, body_lean, foot_plant)
-		pose_pair(side + "UpperArm", side + "LowerArm", -cycle * 0.40 - air_pose * 0.40,
-			-0.12 * stride - air_pose * 0.22, body_lean)
+		pose_pair(side + "UpperArm", side + "LowerArm", (-cycle * 0.40 - air_pose * 0.40) * gait,
+			(-0.12 * stride - air_pose * 0.22) * gait, body_lean)
 
 		if grip_blend > 0.0 and is_instance_valid(reach_cube):
 			reach_for_cube(side, body_lean)
@@ -101,7 +125,7 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 
 func supported_reach_pose(delta: float, grounded: bool, hip_center: Vector3) -> Transform3D:
 	var supported_reach := 0.0
-	if grounded and grip_blend > 0.0 and is_instance_valid(reach_cube):
+	if grounded and not shared_attachment and grip_blend > 0.0 and is_instance_valid(reach_cube):
 		var anchor := model.to_local(reach_cube.to_global(grip_anchor))
 		var height: float = anchor.y - model.floor_height
 		var hip_height := maxf(hip_center.y - model.floor_height, 0.1)
@@ -135,7 +159,12 @@ func required_arm_drop(side: String, body_pose: Transform3D) -> float:
 
 func hand_contact(shoulder_x: float, radius: float) -> Vector3:
 	var contact_local := grip_anchor + grip_normal * radius
-	contact_local += grip_lateral * clampf(shoulder_x, -0.33, 0.33)
+	if shared_attachment:
+		var tangent := reach_cube.global_basis.inverse() * model.global_basis.x.normalized()
+		tangent -= grip_normal * tangent.dot(grip_normal)
+		contact_local += tangent.normalized() * clampf(shoulder_x, -0.08, 0.08)
+	else:
+		contact_local += grip_lateral * clampf(shoulder_x, -0.33, 0.33)
 	return reach_cube.to_global(contact_local)
 
 
@@ -153,12 +182,13 @@ func reach_for_cube(side: String, body_pose: Transform3D) -> void:
 
 	var contact := hand_contact(upper_rest.origin.x, lower_mesh.radius)
 	var relaxed_tip := lower.position + lower.basis.y * lower_span * 0.5
-	var target: Vector3 = relaxed_tip.lerp(model.to_local(contact), grip_blend)
+	var attached := shared_attachment and is_instance_valid(grip_cube)
+	var target: Vector3 = relaxed_tip.lerp(model.to_local(contact), 1.0 if attached else grip_blend)
 	var outward := signf(upper_rest.origin.x)
 	var bend := Vector3(outward * 0.45, -1.0, 0.0)
 	var downward := smoothstep(0.15, 0.55, shoulder.y - target.y)
 	bend = bend.lerp(Vector3(outward * 0.6, 0.0, -1.0), downward)
-	solve_pair(upper, lower, shoulder, target, bend)
+	solve_pair(upper, lower, shoulder, target, bend, MAX_GRIP_STRETCH if shared_attachment else 1.0)
 
 
 func bend_knee(side: String, body_pose: Transform3D, crouch: float) -> void:
@@ -176,12 +206,15 @@ func bend_knee(side: String, body_pose: Transform3D, crouch: float) -> void:
 
 
 func solve_pair(upper: MeshInstance3D, lower: MeshInstance3D, start: Vector3, target: Vector3,
-		pole: Vector3) -> void:
+		pole: Vector3, max_stretch := 1.0) -> void:
 	var offset := target - start
 	if offset.length_squared() < 0.000001:
 		return
 	var upper_span := segment_span(upper)
 	var lower_span := segment_span(lower)
+	var stretch := clampf((offset.length() + 0.001) / (upper_span + lower_span), 1.0, max_stretch)
+	upper_span *= stretch
+	lower_span *= stretch
 	var direction := offset.normalized()
 	var distance := clampf(offset.length(), absf(upper_span - lower_span) + 0.001,
 		upper_span + lower_span - 0.001)
@@ -193,6 +226,36 @@ func solve_pair(upper: MeshInstance3D, lower: MeshInstance3D, start: Vector3, ta
 	var joint := start + direction * along + bend.normalized() * bend_amount
 	point_segment(upper, start, joint)
 	point_segment(lower, joint, start + direction * distance)
+	if stretch > 1.0:
+		upper.scale.y = stretch
+		lower.scale.y = stretch
+
+
+func rest_shoulder(side: String) -> Vector3:
+	var name := StringName(side + "UpperArm")
+	var upper: MeshInstance3D = model.limb_meshes[name]
+	var pose := rest[name]
+	return model.transform * (pose.origin - pose.basis.y * segment_span(upper) * 0.5)
+
+
+func hand_radius(side: String) -> float:
+	var forearm: MeshInstance3D = model.limb_meshes[StringName(side + "LowerArm")]
+	return forearm.mesh.radius
+
+
+func hand_error() -> float:
+	var error := 0.0
+	for side in ["Left", "Right"]:
+		var forearm: MeshInstance3D = model.limb_meshes[StringName(side + "LowerArm")]
+		var hand := forearm.to_global(Vector3.UP * segment_span(forearm) * 0.5)
+		var shoulder: Transform3D = rest[StringName(side + "UpperArm")]
+		error = maxf(error, hand.distance_to(hand_contact(shoulder.origin.x, forearm.mesh.radius)))
+	return error
+
+
+func arm_reach(side: String) -> float:
+	return segment_span(model.limb_meshes[StringName(side + "UpperArm")]) + segment_span(
+		model.limb_meshes[StringName(side + "LowerArm")])
 
 
 func segment_span(part: MeshInstance3D) -> float:

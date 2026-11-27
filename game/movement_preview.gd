@@ -4,6 +4,7 @@ const PlaytestRecorder := preload("res://game/playtest_recorder.gd")
 const Mannequin := preload("res://game/mannequin.gd")
 const CubeControls := preload("res://game/cube_controls.gd")
 const GrabCube := preload("res://game/grabbable_cube.gd")
+const GrabWheel := preload("res://game/grabbable_wheel.gd")
 const HeadLook := preload("res://game/controller_head_look.gd")
 const DynamicController := preload("res://game/dynamic_mannequin_controller.gd")
 const Controller := preload("res://game/mannequin_controller.gd")
@@ -28,6 +29,9 @@ const DYNAMIC_SETTINGS_FILE := "user://mannequin-movement-dynamic.json"
 var use_dynamic_controller := false
 var player
 var cube := GrabCube.new()
+var wheel: GrabWheel
+var irregular: RigidBody3D
+const IRREGULAR_START := Vector3(-6.15, 0.40, 0.0)
 var camera := Camera3D.new()
 var proportions := ""
 var jump_pressed := false
@@ -61,6 +65,10 @@ func _ready() -> void:
 		add_floor_marker(index * 2.5)
 
 	add_child(cube)
+	if use_dynamic_controller:
+		wheel = GrabWheel.new()
+		add_child(wheel)
+		add_irregular_fixture()
 	add_child(player)
 	add_child(head_look)
 	add_child(recorder)
@@ -77,6 +85,8 @@ func _ready() -> void:
 	visual.decode_proportions(proportions)
 	visual.position.y = -visual.floor_height
 	player.motion.bind_model(visual)
+	if wheel != null:
+		set_wheel_height(player.motion)
 	add_head_direction_line(visual.head)
 
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -86,6 +96,47 @@ func _ready() -> void:
 	update_camera()
 	camera.make_current()
 	add_controls()
+
+
+func add_irregular_fixture() -> void:
+	irregular = RigidBody3D.new()
+	irregular.name = "Irregular"
+	irregular.position = IRREGULAR_START
+	irregular.collision_layer = 2
+	irregular.collision_mask = 3
+	irregular.mass = 3.5
+	irregular.axis_lock_linear_z = true
+	irregular.axis_lock_angular_x = true
+	irregular.axis_lock_angular_y = true
+	for piece in [
+		[Vector3.ZERO, Vector3(1.5, 0.76, 1.05), 0.0],
+		[Vector3(-0.40, 0.53, 0.0), Vector3(0.88, 0.56, 1.05), -0.24],
+	]:
+		var box := BoxShape3D.new()
+		box.size = piece[1]
+		var collider := CollisionShape3D.new()
+		collider.shape = box
+		collider.position = piece[0]
+		collider.rotation.z = piece[2]
+		irregular.add_child(collider)
+		var mesh := BoxMesh.new()
+		mesh.size = box.size
+		collider.add_child(colored_mesh(mesh, Color("#9e77be")))
+	add_child(irregular)
+
+
+func set_wheel_height(motion: Node3D) -> void:
+	# Leave a small jump to the rim with the proportions loaded for this playtest.
+	var rim_z := wheel.start.z
+	var standing_reach := 0.0
+	for hand in ["Left", "Right"]:
+		var shoulder: Vector3 = motion.rest_shoulder(hand)
+		var reach: float = motion.arm_reach(hand) * DynamicController.CATCH_REACH
+		var depth := absf(shoulder.z - rim_z)
+		var vertical := sqrt(maxf(reach * reach - depth * depth, 0.0))
+		standing_reach = maxf(standing_reach, shoulder.y + vertical + motion.hand_radius(hand))
+	wheel.start.y = GrabWheel.RADIUS + standing_reach + 0.12
+	wheel.reset()
 
 
 func add_head_direction_line(head: MeshInstance3D) -> void:
@@ -146,7 +197,11 @@ func _physics_process(delta: float) -> void:
 	if not left and not right:
 		direction = analog
 	player.motion.head_look_target = head_look.sample()
-	player.update_grip(cube, grab_held)
+	if use_dynamic_controller:
+		var targets: Array[RigidBody3D] = [cube, wheel, irregular]
+		player.update_grip_candidates(targets, grab_held)
+	else:
+		player.update_grip(cube, grab_held)
 	player.step(delta, direction, jump_held, jump_pressed)
 	if recorder.recording:
 		record_physics(delta, direction, raw_stick, jump_held, grab_held)
@@ -174,6 +229,13 @@ func reset_sandbox() -> void:
 	recorder.log_event("reset_positions", {})
 	player.reset()
 	cube.reset()
+	if wheel != null:
+		wheel.reset()
+		irregular.transform = Transform3D(Basis.IDENTITY, IRREGULAR_START)
+		irregular.linear_velocity = Vector3.ZERO
+		irregular.angular_velocity = Vector3.ZERO
+		irregular.sleeping = false
+		irregular.reset_physics_interpolation()
 
 
 func start_on_cube() -> void:
@@ -201,7 +263,9 @@ func update_camera() -> void:
 	# Follow the same rendered position as the mannequin to keep it steady in the frame.
 	var focus_x: float = player.get_global_transform_interpolated().origin.x
 	camera.position = Vector3(focus_x, 4.2, 10.0)
-	camera.look_at(Vector3(focus_x, 1.9, 0))
+	var rise := maxf(player.get_global_transform_interpolated().origin.y - 2.0, 0.0) if wheel != null else 0.0
+	camera.position.y += rise
+	camera.look_at(Vector3(focus_x, 1.9 + rise, 0))
 
 
 func add_platform(center: Vector3, dimensions: Vector3, color: Color, visible_mesh: bool) -> void:
@@ -260,7 +324,19 @@ func add_controls() -> void:
 	panel.add_child(hint)
 	var grab_hint := Label.new()
 	grab_hint.text = "Hold R1 or E beside or on the orange cube · Jump to lift the face you grabbed"
+	if use_dynamic_controller:
+		grab_hint.text = "Hold R1 or E to grab the orange cube or purple block. Jump to reach the blue wheel."
 	panel.add_child(grab_hint)
+	if wheel != null:
+		var wheel_speed := SpinBox.new()
+		wheel_speed.prefix = "Wheel "
+		wheel_speed.suffix = " rad/s"
+		wheel_speed.min_value = 0.0
+		wheel_speed.max_value = 4.0
+		wheel_speed.step = 0.05
+		wheel_speed.value = wheel.spin_speed
+		wheel_speed.value_changed.connect(func(value: float): wheel.spin_speed = value)
+		panel.add_child(wheel_speed)
 	for key: StringName in TUNING_LABELS:
 		add_adjustment(panel, key)
 	panel.add_child(tuning_status)
@@ -312,6 +388,7 @@ func record_physics(delta: float, direction: float, raw_stick: float, jump_held:
 	var motion: Node3D = player.motion
 	var head: MeshInstance3D = motion.model.head
 	var dynamic := player as DynamicController
+	var grabbed: RigidBody3D = player.held_cube
 	recorder.log_event("physics", {
 		"dt": delta,
 		"input": {
@@ -323,9 +400,11 @@ func record_physics(delta: float, direction: float, raw_stick: float, jump_held:
 			"world_velocity": vector_values(player.get_real_velocity()), "drive_speed": player.last_drive_speed,
 			"grounded": player.is_on_floor(), "floor_normal": vector_values(player.get_floor_normal()),
 			"support_velocity": vector_values(player.get_platform_velocity()),
-			"body_yaw": motion.rotation.y, "head_forward": vector_values(head.global_basis.z.normalized()),
+			"body_yaw": motion.rotation.y, "body_roll": player.rotation.z, "head_forward": vector_values(head.global_basis.z.normalized()),
 			"reach_lowering": motion.reach_lowering, "reach_pitch": motion.reach_pitch,
 			"support_body": support_name(dynamic),
+			"support_normal_impulse": dynamic.last_support_impulse if dynamic != null else null,
+			"physical_crouch": dynamic.physical_crouch if dynamic != null else null,
 			"drive_impulse": vector_values(dynamic.last_drive_impulse) if dynamic != null else null,
 			"takeoff_impulse": vector_values(dynamic.last_takeoff_impulse) if dynamic != null else null,
 			"simulated_move": dynamic.last_simulated_input.x if dynamic != null else null,
@@ -335,19 +414,52 @@ func record_physics(delta: float, direction: float, raw_stick: float, jump_held:
 			"position": vector_values(cube.global_position), "velocity": vector_values(cube.linear_velocity),
 			"rotation_z": cube.rotation.z, "angular_velocity_z": cube.angular_velocity.z,
 		},
+		"wheel": {
+			"position": vector_values(wheel.global_position), "rotation_z": wheel.rotation.z,
+			"angular_velocity_z": wheel.angular_velocity.z, "target_speed": wheel.spin_speed,
+		} if wheel != null else null,
 		"grip": {
+			"attachment_dynamics": attachment_dynamics(dynamic),
+			"hands": ["Left", "Right"] if grabbed != null else [],
+			"hand_error": motion.hand_error() if grabbed != null and motion.reach_cube == grabbed else null,
+			"target": "" if grabbed == null else fixture_name(grabbed),
 			"held": player.held_cube != null, "from_above": player.grip_from_above,
 			"shared_support": player.last_shared_support, "force_on_cube": vector_values(player.last_grip_force),
 			"anchor_local": vector_values(player.grip_anchor) if player.held_cube != null else null,
-			"anchor_world": vector_values(cube.to_global(player.grip_anchor)) if player.held_cube != null else null,
+			"anchor_world": vector_values(grabbed.to_global(player.grip_anchor)) if grabbed != null else null,
 		},
 	})
+
+
+func attachment_dynamics(dynamic: DynamicController) -> Variant:
+	if dynamic == null or dynamic.last_grip_sample.is_empty():
+		return null
+	var sample := dynamic.last_grip_sample
+	return {
+		"shoulder": vector_values(sample.shoulder),
+		"center_of_mass": vector_values(sample.center),
+		"lever": vector_values(sample.lever),
+		"contact_count": sample.contact_count,
+		"roll_speed": sample.roll_speed,
+		"grip_torque": sample.torque,
+		"upright_torque": dynamic.last_upright_torque,
+	}
 
 
 func support_name(dynamic: DynamicController) -> String:
 	if dynamic == null or dynamic.support_body == null:
 		return ""
-	return "cube" if dynamic.support_body == cube else "terrain"
+	return fixture_name(dynamic.support_body)
+
+
+func fixture_name(body: PhysicsBody3D) -> String:
+	if body == wheel:
+		return "wheel"
+	if body == cube:
+		return "cube"
+	if body == irregular:
+		return "irregular"
+	return "terrain"
 
 
 func vector_values(value: Vector3) -> Array[float]:

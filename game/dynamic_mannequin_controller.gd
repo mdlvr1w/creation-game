@@ -4,11 +4,12 @@ extends RigidBody3D
 
 const Motion := preload("res://game/figurine_motion.gd")
 const Settings := preload("res://game/movement_settings.gd")
-const GrabCube := preload("res://game/grabbable_cube.gd")
 
-const REACH := 0.85
-const GRIP_FREQUENCY := 13.0
-const GRIP_STRENGTH := 185.0
+const CATCH_REACH := 1.35
+const GRIP_STIFFNESS := 1700.0
+const GRIP_DAMPING := 100.0
+const GRIP_FORCE := 550.0
+const CAPSULE_HEIGHT := 1.75
 
 @export var drive_strength := 145.0
 @export var drive_response := 0.12
@@ -28,10 +29,21 @@ var support_body: PhysicsBody3D
 var support_position := Vector3.ZERO
 var support_relative_y := 0.0
 
-var held_cube: GrabCube
+var held_cube: RigidBody3D
 var grip_anchor := Vector3.ZERO
-var player_anchor := Vector3.ZERO
+var grip_normal := Vector3.ZERO
+var grip_clearance := 0.0
 var grip_from_above := false
+var grip_shoulder := Vector3.ZERO
+var grip_reach := 0.0
+var grip_launch := false
+var near_grip_footing := false
+var physical_crouch := 0.0
+var crouch_clearance := CapsuleShape3D.new()
+var last_support_impulse := 0.0
+var last_grip_sample: Dictionary = {}
+var last_upright_torque := 0.0
+var body_collider := CollisionShape3D.new()
 var last_drive_speed := 0.0
 var last_grip_force := Vector3.ZERO
 var last_shared_support := false
@@ -48,6 +60,8 @@ func _ready() -> void:
 	mass = 6.0
 	lock_rotation = true
 	axis_lock_linear_z = true
+	axis_lock_angular_x = true
+	axis_lock_angular_y = true
 	can_sleep = false
 	continuous_cd = true
 	collision_mask = 3
@@ -57,14 +71,16 @@ func _ready() -> void:
 
 	physics_material_override = PhysicsMaterial.new()
 	physics_material_override.friction = 0.12
-	var collider := CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = 0.35
-	capsule.height = 2.45
-	collider.shape = capsule
-	collider.position.y = capsule.height * 0.5
-	add_child(collider)
+	# Leave room for the overhead reach before the movement capsule meets the tread.
+	capsule.height = CAPSULE_HEIGHT
+	crouch_clearance.radius = capsule.radius
+	body_collider.shape = capsule
+	body_collider.position.y = capsule.height * 0.5
+	add_child(body_collider)
 	add_child(motion)
+	motion.shared_attachment = true
 
 
 func step(delta: float, move_intent: float, jump_down: bool, jump_pressed := false) -> void:
@@ -74,18 +90,67 @@ func step(delta: float, move_intent: float, jump_down: bool, jump_pressed := fal
 	jump_held = jump_down
 	var world_gravity := float(ProjectSettings.get_setting("physics/3d/default_gravity"))
 	gravity_scale = settings.values.gravity / world_gravity
+	update_physical_crouch(delta)
+	motion.travel_speed = linear_velocity.x
 	var visual_velocity := linear_velocity
 	if is_on_floor():
 		visual_velocity.x -= support_velocity.x
 	motion.animate(delta, visual_velocity, is_on_floor(), settings.values.max_speed, settings.values.lean_degrees, direction)
 
 
+func update_physical_crouch(delta: float) -> void:
+	var target := 0.0
+	if held_cube != null and not lock_rotation:
+		var query := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 0.65,
+			global_position - Vector3.UP * 0.25, collision_mask, [get_rid()])
+		var foot := get_world_3d().direct_space_state.intersect_ray(query)
+		if near_grip_footing or support_body == held_cube or (
+				not foot.is_empty() and foot.collider == held_cube and foot.normal.y > 0.45):
+			target = clampf(grip_shoulder.y - grip_reach * 0.94, 0.50,
+				CAPSULE_HEIGHT - crouch_clearance.radius * 2.0)
+	var lowering := move_toward(physical_crouch, target, delta * 4.0)
+	if is_equal_approx(lowering, physical_crouch):
+		return
+	if lowering < physical_crouch:
+		# Check the space at the growing end without re-testing the planted end.
+		var upper := (body_collider.shape as CapsuleShape3D).height - crouch_clearance.radius
+		crouch_clearance.height = crouch_clearance.radius * 2.0 + physical_crouch - lowering
+		var clearance := PhysicsShapeQueryParameters3D.new()
+		clearance.shape = crouch_clearance
+		clearance.transform = global_transform.translated(global_basis.y * (
+			upper + (physical_crouch - lowering) * 0.5))
+		clearance.collision_mask = collision_mask
+		clearance.exclude = [get_rid()]
+		if not get_world_3d().direct_space_state.intersect_shape(clearance, 1).is_empty():
+			return
+	set_physical_crouch(lowering)
+
+
+func set_physical_crouch(lowering: float) -> void:
+	physical_crouch = lowering
+	var capsule := body_collider.shape as CapsuleShape3D
+	capsule.height = CAPSULE_HEIGHT - lowering
+	body_collider.position.y = capsule.height * 0.5
+	motion.physical_crouch = lowering
+
+
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	var straightening := not lock_rotation and held_cube == null
+	if straightening:
+		try_straighten(state)
 	read_support(state)
+	if not straightening and is_on_floor():
+		grip_launch = false
+	update_balance(state)
 	last_simulated_input = Vector2(direction, float(jump_requested))
-	apply_drive(state)
 	last_takeoff_impulse = Vector3.ZERO
-	if jump_requested and support_body != null and support_relative_y < 0.8:
+	if straightening:
+		# Give the release frame to the launch; steering resumes once upright.
+		last_drive_impulse = Vector3.ZERO
+		can_cut_jump = false
+	else:
+		apply_drive(state)
+	if not straightening and jump_requested and support_body != null and support_relative_y < 0.8:
 		takeoff(state)
 		can_cut_jump = jump_held
 	elif can_cut_jump and not jump_held and state.linear_velocity.y > settings.values.min_jump:
@@ -97,9 +162,10 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	jump_requested = false
 
 	last_grip_force = Vector3.ZERO
+	last_grip_sample = {}
 	last_shared_support = held_cube != null and held_cube == support_body
 	if held_cube != null:
-		apply_grip(state)
+		apply_attachment(state)
 
 
 func read_support(state: PhysicsDirectBodyState3D) -> void:
@@ -108,16 +174,17 @@ func read_support(state: PhysicsDirectBodyState3D) -> void:
 	support_velocity = Vector3.ZERO
 	support_relative_y = 0.0
 	var best_normal := 0.70
+	near_grip_footing = false
+	last_support_impulse = 0.0
 	for index in state.get_contact_count():
 		var normal := state.get_contact_local_normal(index)
-		if normal.y <= best_normal:
-			continue
-		var local_point := state.get_contact_local_position(index)
-		if local_point.y > state.transform.origin.y + 0.4:
-			continue
+		var foot_offset := state.get_contact_local_position(index) - state.transform.origin
 		var collider := state.get_contact_collider_object(index) as PhysicsBody3D
-		if collider == null:
+		if held_cube != null and collider == held_cube and normal.y > 0.45 and foot_offset.y < 0.75:
+			near_grip_footing = true
+		if collider == null or normal.y <= best_normal or foot_offset.dot(state.transform.basis.y) > 0.4:
 			continue
+		last_support_impulse = state.get_contact_impulse(index).dot(normal)
 		best_normal = normal.y
 		support_body = collider
 		floor_normal = normal
@@ -129,6 +196,9 @@ func read_support(state: PhysicsDirectBodyState3D) -> void:
 func apply_drive(state: PhysicsDirectBodyState3D) -> void:
 	var tuning := settings.values
 	last_drive_speed = signf(direction) * lerpf(tuning.min_speed, tuning.max_speed, absf(direction))
+	if not is_on_floor() and (held_cube != null or (grip_launch and is_zero_approx(direction))):
+		last_drive_impulse = Vector3.ZERO
+		return
 	var drive_budget := drive_strength
 	var response := braking_response if is_zero_approx(direction) else drive_response
 	if support_body is RigidBody3D:
@@ -160,67 +230,132 @@ func takeoff(state: PhysicsDirectBodyState3D) -> void:
 		support_body.apply_impulse(-impulse, support_position - support_body.global_position)
 
 
-func apply_grip(state: PhysicsDirectBodyState3D) -> void:
-	var cube_offset := held_cube.global_basis * grip_anchor
-	var cube_point := held_cube.global_position + cube_offset
-	var cube_speed := held_cube.linear_velocity + held_cube.angular_velocity.cross(cube_offset)
-	var gap := state.transform.origin + player_anchor - cube_point
-	var drift := state.linear_velocity - cube_speed
-	# Equal and opposite impulses at a persistent surface point. Rotation stays free.
-	var reduced_mass := 1.0 / (state.inverse_mass + 1.0 / held_cube.mass)
-	var impulse := (gap * GRIP_FREQUENCY + drift) * reduced_mass * (1.0 - exp(-state.step * GRIP_FREQUENCY))
-	impulse.z = 0.0
-	impulse = impulse.limit_length(GRIP_STRENGTH * state.step)
-	held_cube.apply_impulse(impulse, cube_offset)
-	state.apply_central_impulse(-impulse)
-	last_grip_force = impulse / state.step
-
-
-func update_grip(cube: GrabCube, held: bool) -> void:
-	if not held:
-		held_cube = null
-		grip_from_above = false
-		motion.grip_cube = null
-		return
-	if held_cube != null:
-		return
-	var from_above := support_body == cube
-	var height := 0.16 if from_above else 1.22
-	var reach_origin := cube.to_local(global_position + Vector3.UP * height)
-	var best_distance := REACH
-	var best_normal := Vector3.ZERO
-	var best_point := Vector3.ZERO
-	var half := GrabCube.HALF_SIZE
-	for normal: Vector3 in [Vector3.LEFT, Vector3.RIGHT, Vector3.UP, Vector3.DOWN]:
-		if reach_origin.dot(normal) < half - 0.15:
+func try_straighten(state: PhysicsDirectBodyState3D) -> void:
+	var center := state.transform * state.center_of_mass_local
+	var upright := Transform3D(Basis.IDENTITY, center - state.center_of_mass_local)
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = body_collider.shape
+	query.collision_mask = collision_mask
+	query.exclude = [get_rid()]
+	# Try the same center first. A low release can need room above floor contact.
+	for lift in [0.0, 0.15, 0.30, 0.60, 0.90, 1.20]:
+		var candidate := upright.translated(Vector3.UP * lift)
+		query.transform = candidate * body_collider.transform
+		if not state.get_space_state().intersect_shape(query, 1).is_empty():
 			continue
-		var tangent := Vector3(-normal.y, normal.x, 0)
-		var along := clampf(reach_origin.dot(tangent), -half + 0.13, half - 0.13)
-		var point := normal * half + tangent * along
-		var distance := reach_origin.distance_to(point)
-		if distance < best_distance:
-			best_distance = distance
-			best_point = point
-			best_normal = normal
-	if best_normal.is_zero_approx():
+		var launch_velocity := state.linear_velocity
+		state.transform = candidate
+		state.angular_velocity = Vector3.ZERO
+		lock_rotation = true
+		state.linear_velocity = launch_velocity
+		reset_physics_interpolation()
 		return
 
-	held_cube = cube
-	grip_anchor = best_point
-	player_anchor = cube.to_global(best_point) - global_position
-	grip_from_above = from_above
-	var side := signf(player_anchor.x)
-	if is_zero_approx(side):
-		side = motion.facing
-	motion.grip_cube = cube
-	motion.grip_anchor = best_point
-	motion.grip_normal = best_normal
-	motion.grip_side = side
+
+func update_balance(state: PhysicsDirectBodyState3D) -> void:
+	last_upright_torque = 0.0
+	if held_cube == null:
+		return
+	var angle := state.transform.basis.y.signed_angle_to(Vector3.UP, Vector3.BACK)
+	# The shoulder can sit below the capsule's center with compact proportions.
+	# A bounded upright preference counters the static load while leaving room to swing.
+	last_upright_torque = clampf(145.0 * angle - 26.0 * state.angular_velocity.z, -105.0, 105.0)
+	state.apply_torque_impulse(Vector3.BACK * last_upright_torque * state.step)
+
+
+func apply_attachment(state: PhysicsDirectBodyState3D) -> void:
+	var rim_offset := held_cube.global_basis * grip_anchor
+	var shoulder_offset := state.transform.basis * (grip_shoulder - Vector3.UP * physical_crouch)
+	var visual_offset := held_cube.global_basis * (grip_anchor + grip_normal * grip_clearance)
+	var separation := held_cube.global_position + visual_offset - state.transform.origin - shoulder_offset
+	var distance := separation.length()
+	var lever := shoulder_offset - state.transform.basis * state.center_of_mass_local
+	last_grip_sample = {
+		"shoulder": state.transform.origin + shoulder_offset,
+		"center": state.transform * state.center_of_mass_local,
+		"lever": lever,
+		"contact_count": state.get_contact_count(),
+		"roll_speed": state.angular_velocity.z,
+		"torque": 0.0,
+	}
+	if distance < grip_reach * 0.94:
+		return
+
+	var axis := separation / distance
+	var shoulder_velocity := state.linear_velocity + state.angular_velocity.cross(lever)
+	var rim_velocity := held_cube.linear_velocity + held_cube.angular_velocity.cross(visual_offset)
+	var tension := (distance - grip_reach * 0.94) * GRIP_STIFFNESS
+	tension += (rim_velocity - shoulder_velocity).dot(axis) * GRIP_DAMPING
+	var impulse := axis * clampf(tension, 0.0, GRIP_FORCE) * state.step
+	impulse.z = 0.0
+	last_grip_sample["torque"] = lever.cross(impulse).z / state.step
+	state.apply_impulse(impulse, shoulder_offset)
+	held_cube.apply_impulse(-impulse, rim_offset)
+	last_grip_force = -impulse / state.step
+
+
+func release_grip() -> void:
+	if held_cube != null:
+		grip_launch = true
+		angular_damp = 0.0
+	held_cube = null
+	grip_from_above = false
+	motion.grip_cube = null
+
+
+func update_grip(target: RigidBody3D, held: bool) -> void:
+	var candidates: Array[RigidBody3D] = []
+	if target != null:
+		candidates.append(target)
+	update_grip_candidates(candidates, held)
+
+
+func update_grip_candidates(candidates: Array[RigidBody3D], held: bool) -> void:
+	if not held:
+		release_grip()
+		return
+	if held_cube != null or candidates.is_empty():
+		return
+	grip_shoulder = (motion.rest_shoulder("Left") + motion.rest_shoulder("Right")) * 0.5
+	grip_reach = (motion.arm_reach("Left") + motion.arm_reach("Right")) * 0.5
+	var origins: Array[Vector3] = [to_global(grip_shoulder)]
+	if is_on_floor():
+		origins.append(global_position + Vector3.UP * 0.22)
+	var query := PhysicsRayQueryParameters3D.new()
+	query.collision_mask = collision_mask
+	query.exclude = [get_rid()]
+	var space := get_world_3d().direct_space_state
+	var best: Dictionary = {}
+	var closest := INF
+	for origin in origins:
+		query.from = origin
+		for ray in 24:
+			var angle := TAU * ray / 24.0
+			query.to = origin + Vector3(cos(angle), sin(angle), 0.0) * grip_reach * CATCH_REACH
+			var hit := space.intersect_ray(query)
+			if hit.is_empty() or not hit.collider is RigidBody3D or hit.collider not in candidates:
+				continue
+			var distance := origin.distance_to(hit.position)
+			if distance < closest:
+				best = hit
+				closest = distance
+	if best.is_empty():
+		return
+	held_cube = best.collider
+	grip_anchor = held_cube.to_local(best.position)
+	grip_from_above = held_cube == support_body
+	motion.grip_cube = held_cube
+	motion.grip_anchor = grip_anchor
+	grip_normal = held_cube.global_basis.inverse() * best.normal
+	grip_clearance = (motion.hand_radius("Left") + motion.hand_radius("Right")) * 0.5
+	motion.grip_normal = grip_normal
+	motion.grip_side = signf(best.position.x - global_position.x)
+	if is_zero_approx(motion.grip_side):
+		motion.grip_side = motion.facing
 	motion.grip_start_yaw = motion.rotation.y
-	motion.grip_lateral = Vector3.BACK * -side
-	if from_above:
-		var lateral := cube.global_basis.inverse() * motion.global_basis.x
-		motion.grip_lateral = (lateral - best_normal * lateral.dot(best_normal)).normalized()
+	motion.grip_lateral = Vector3.FORWARD
+	lock_rotation = false
+	angular_damp = 1.4
 
 
 func is_on_floor() -> bool:
@@ -245,13 +380,17 @@ func reset() -> void:
 	motion.grip_blend = 0.0
 	motion.reach_lowering = 0.0
 	motion.reach_pitch = 0.0
+	near_grip_footing = false
+	set_physical_crouch(0.0)
 	support_body = null
 	support_velocity = Vector3.ZERO
 	floor_normal = Vector3.ZERO
 	direction = 0.0
 	jump_requested = false
 	can_cut_jump = false
-	position = Vector3(0, 0.02, 0)
+	transform = Transform3D(Basis.IDENTITY, Vector3(0, 0.02, 0))
+	lock_rotation = true
+	grip_launch = false
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	reset_physics_interpolation()
