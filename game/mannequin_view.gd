@@ -76,13 +76,14 @@ func add_controls() -> void:
 	var play := Button.new()
 	play.text = "Try movement"
 	play.custom_minimum_size.y = 32
-	play.pressed.connect(func():
-		var tree := get_tree()
-		tree.set_meta("preview_proportions", figurine.encode_proportions())
-		if tree.change_scene_to_file("res://game/movement_preview.tscn") != OK:
-			tree.remove_meta("preview_proportions")
-	)
+	play.pressed.connect(open_movement.bind(false))
 	toolbar.add_child(play)
+
+	var dynamic := Button.new()
+	dynamic.text = "Try dynamic movement"
+	dynamic.custom_minimum_size.y = 32
+	dynamic.pressed.connect(open_movement.bind(true))
+	toolbar.add_child(dynamic)
 
 	status.position = Vector2(20, 58)
 	status.text = "Click a part of the mannequin to adjust its proportions."
@@ -91,6 +92,15 @@ func add_controls() -> void:
 	interface.add_child(status)
 	interface.add_child(limb_controls)
 	limb_controls.factor_changed.connect(set_limb_factor)
+
+
+func open_movement(use_dynamic: bool) -> void:
+	var tree := get_tree()
+	tree.set_meta("preview_proportions", figurine.encode_proportions())
+	tree.set_meta("preview_dynamic", use_dynamic)
+	if tree.change_scene_to_file("res://game/movement_preview.tscn") != OK:
+		tree.remove_meta("preview_proportions")
+		tree.remove_meta("preview_dynamic")
 
 
 func _unhandled_input(event: InputEvent) -> void:

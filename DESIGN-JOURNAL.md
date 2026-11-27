@@ -248,3 +248,13 @@ The movement preview can start and stop a local diagnostic capture. Starting aga
 ### Data-only playtest recording
 
 Use the creator's description to identify what felt wrong and the timestamped data to investigate what the game was doing. The capture now saves only the diagnostic trace. The capture buttons and the single latest recording workflow remain in use.
+
+## 2026-11-27
+
+### Experimental physics-driven controller
+
+The current character controller remains the gameplay reference, with its own saved movement preset. The experiment gives the same figurine an upright dynamic capsule with a target speed, a response time, and a finite drive force. Grabbing leaves the requested movement independent of the object's mass. A compliant grip exchanges opposing impulses at an object-local surface point. The current posture reads the resulting motion and contact.
+
+Foot support records a body and contact velocity. Traction is weaker on a movable support. Jumping against a movable support applies an opposing impulse at the foot contact, so the figurine and its held cube cannot repeatedly launch their combined mass upward using their own contacts. The regression tests cover 17 jump attempts, an off-center nudge, supported transport, and the difference between light and heavy cubes.
+
+This is an experiment with built-in rigid-body physics and a bounded impulse grip. A custom movement constraint inside the solver remains a separate option. The regression suite passed with the default Godot Physics backend and with Jolt selected in a scratch project. The shipped backend stays the same for both previews. Hands-on comparison will determine whether the dynamic controller gives us a better foundation.

@@ -4,6 +4,7 @@ const PlaytestRecorder := preload("res://game/playtest_recorder.gd")
 const Mannequin := preload("res://game/mannequin.gd")
 const GrabCube := preload("res://game/grabbable_cube.gd")
 const HeadLook := preload("res://game/controller_head_look.gd")
+const DynamicController := preload("res://game/dynamic_mannequin_controller.gd")
 const Controller := preload("res://game/mannequin_controller.gd")
 const Settings := preload("res://game/movement_settings.gd")
 const TUNING_LABELS := {
@@ -21,7 +22,10 @@ const TUNING_HELP := {
 }
 const Stage := preload("res://game/mannequin_stage.gd")
 
-var player := Controller.new()
+const DYNAMIC_SETTINGS_FILE := "user://mannequin-movement-dynamic.json"
+
+var use_dynamic_controller := false
+var player
 var cube := GrabCube.new()
 var camera := Camera3D.new()
 var proportions := ""
@@ -38,6 +42,11 @@ var stop_record_button: Button
 
 
 func _ready() -> void:
+	var tree := get_tree()
+	if tree.has_meta("preview_dynamic"):
+		use_dynamic_controller = tree.get_meta("preview_dynamic")
+		tree.remove_meta("preview_dynamic")
+	player = DynamicController.new() if use_dynamic_controller else Controller.new()
 	add_child(Stage.new())
 	add_platform(Vector3(0, -0.5, 0), Vector3(180, 1, 16), Color("#404b51"), false)
 	add_platform(Vector3(-9.5, 0.14, 0), Vector3(2.25, 0.28, 2.6), Color("#587e79"), true)
@@ -53,12 +62,12 @@ func _ready() -> void:
 	add_child(head_look)
 	add_child(recorder)
 	player.reset()
-	if FileAccess.file_exists(Settings.LOCAL_FILE) and not player.settings.load_from():
+	var tuning_file := DYNAMIC_SETTINGS_FILE if use_dynamic_controller and FileAccess.file_exists(DYNAMIC_SETTINGS_FILE) else Settings.LOCAL_FILE
+	if FileAccess.file_exists(tuning_file) and not player.settings.load_from(tuning_file):
 		tuning_status.text = "Could not load saved movement settings."
 	var visual := Mannequin.new()
 	# Bind after the visual is ready so the pose uses the current proportions.
 	player.motion.add_child(visual)
-	var tree := get_tree()
 	proportions = tree.get_meta("preview_proportions", FileAccess.get_file_as_string(Mannequin.WORKING_PROPORTIONS))
 	if tree.has_meta("preview_proportions"):
 		tree.remove_meta("preview_proportions")
@@ -166,7 +175,7 @@ func _process(_delta: float) -> void:
 
 func update_camera() -> void:
 	# Follow the same rendered position as the mannequin to keep it steady in the frame.
-	var focus_x := player.get_global_transform_interpolated().origin.x
+	var focus_x: float = player.get_global_transform_interpolated().origin.x
 	camera.position = Vector3(focus_x, 4.2, 10.0)
 	camera.look_at(Vector3(focus_x, 1.9, 0))
 
@@ -220,6 +229,8 @@ func add_controls() -> void:
 	add_button(buttons, "Center head", head_look.recenter)
 	var hint := Label.new()
 	hint.text = "A / D, ← / → or left stick to move   ·   Space or south face button to jump"
+	if use_dynamic_controller:
+		hint.text = "Dynamic controller experiment\n" + hint.text
 	panel.add_child(hint)
 	var grab_hint := Label.new()
 	grab_hint.text = "Hold R1 or E beside or on the orange cube · Jump to lift the face you grabbed"
@@ -245,6 +256,8 @@ func start_recording() -> void:
 		"schema": 1,
 		"build": build_revision,
 		"engine": Engine.get_version_info().string,
+		"physics_backend_setting": ProjectSettings.get_setting("physics/3d/physics_engine"),
+		"controller": "dynamic" if use_dynamic_controller else "reference",
 		"physics_hz": Engine.physics_ticks_per_second,
 		"movement": player.settings.values,
 		"proportions": JSON.parse_string(proportions),
@@ -259,8 +272,9 @@ func update_recording_status(message: String) -> void:
 
 
 func record_physics(delta: float, direction: float, raw_stick: float, jump_held: bool, grab_held: bool) -> void:
-	var motion := player.motion
+	var motion: Node3D = player.motion
 	var head: MeshInstance3D = motion.model.head
+	var dynamic := player as DynamicController
 	recorder.log_event("physics", {
 		"dt": delta,
 		"input": {
@@ -274,6 +288,11 @@ func record_physics(delta: float, direction: float, raw_stick: float, jump_held:
 			"support_velocity": vector_values(player.get_platform_velocity()),
 			"body_yaw": motion.rotation.y, "head_forward": vector_values(head.global_basis.z.normalized()),
 			"reach_lowering": motion.reach_lowering, "reach_pitch": motion.reach_pitch,
+			"support_body": support_name(dynamic),
+			"drive_impulse": vector_values(dynamic.last_drive_impulse) if dynamic != null else null,
+			"takeoff_impulse": vector_values(dynamic.last_takeoff_impulse) if dynamic != null else null,
+			"simulated_move": dynamic.last_simulated_input.x if dynamic != null else null,
+			"simulated_jump_request": bool(dynamic.last_simulated_input.y) if dynamic != null else null,
 		},
 		"cube": {
 			"position": vector_values(cube.global_position), "velocity": vector_values(cube.linear_velocity),
@@ -286,6 +305,12 @@ func record_physics(delta: float, direction: float, raw_stick: float, jump_held:
 			"anchor_world": vector_values(cube.to_global(player.grip_anchor)) if player.held_cube != null else null,
 		},
 	})
+
+
+func support_name(dynamic: DynamicController) -> String:
+	if dynamic == null or dynamic.support_body == null:
+		return ""
+	return "cube" if dynamic.support_body == cube else "terrain"
 
 
 func vector_values(value: Vector3) -> Array[float]:
@@ -349,7 +374,8 @@ func adjust_movement(value: float, key: StringName) -> void:
 
 
 func save_movement() -> void:
-	tuning_status.text = "Movement settings saved." if player.settings.save_to() else "Could not save movement settings."
+	var path := DYNAMIC_SETTINGS_FILE if use_dynamic_controller else Settings.LOCAL_FILE
+	tuning_status.text = "Movement settings saved." if player.settings.save_to(path) else "Could not save movement settings."
 
 
 func return_to_viewer() -> void:

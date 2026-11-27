@@ -25,6 +25,13 @@ The orange physics cube starts to the left. Walk into it to nudge it, or hold **
 
 The viewer starts from the project preset in `game/default_proportions.json`. A local saved preset takes precedence. Movement uses the displayed proportions and blends the limbs according to horizontal speed and whether the character is on the ground.
 
+## Compare the dynamic controller
+
+Choose **Try dynamic movement** from the figurine viewer. It uses the same sandbox, proportions, and controls as **Try movement**. The dynamic preview starts from reference movement tuning unless there is an experimental preset. Saving from the dynamic preview writes `user://mannequin-movement-dynamic.json`, so you can compare presets without overwriting the reference.
+
+Try starting and stopping, short and long jumps, hauling the cube, and repeated jumps from **Start on cube** while holding R1 or E. The experimental trace identifies the controller and includes the support body, drive impulse, and takeoff impulse.
+
+
 ## Record a playtest
 
 Use **Record** and **Stop recording** in the movement preview. Each new recording replaces the previous local trace at `user://playtest-capture/trace.jsonl`. It contains timestamped in-game inputs, tuning, support motion, and grip forces. Describe what you saw or felt so the trace can be used to investigate that moment.
@@ -43,7 +50,7 @@ Choose **Point editor** in the viewer to open the earlier construction prototype
 
 ## Build and test
 
-Install Godot **4.7.2 stable** and its matching export templates. Run `GODOT_BIN=/path/to/godot ./scripts/build.sh` from Linux. The script imports the project, runs the headless figure, workspace, mannequin, movement, grab, and recording tests, and exports both builds to `dist/`.
+Install Godot **4.7.2 stable** and its matching export templates. Run `GODOT_BIN=/path/to/godot ./scripts/build.sh` from Linux. The script imports the project, runs the headless figure, workspace, mannequin, movement, grab, recording, and dynamic-controller tests, and exports both builds to `dist/`.
 
 `game/figure.gd` owns the saved points and connections. `game/workspace.gd` handles the in-game tools and draws the figure in a 3D viewport. The first workspace uses an orthographic camera, constrains new points to a plane, and uses Godot's Compatibility renderer. The saved format includes depth so the planar input tool need not define the format for later tools.
 
