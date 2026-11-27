@@ -2,6 +2,7 @@ extends Node3D
 
 const PlaytestRecorder := preload("res://game/playtest_recorder.gd")
 const Mannequin := preload("res://game/mannequin.gd")
+const CubeControls := preload("res://game/cube_controls.gd")
 const GrabCube := preload("res://game/grabbable_cube.gd")
 const HeadLook := preload("res://game/controller_head_look.gd")
 const DynamicController := preload("res://game/dynamic_mannequin_controller.gd")
@@ -37,6 +38,8 @@ var motion_status := Label.new()
 var tuning_status := Label.new()
 var recorder := PlaytestRecorder.new()
 var capture_status := Label.new()
+var cube_controls := CubeControls.new()
+var pending_cube_pick := Vector2.INF
 var record_button: Button
 var stop_record_button: Button
 
@@ -114,11 +117,17 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and typing_number():
-		get_viewport().gui_get_focus_owner().release_focus()
+	if event is InputEventMouseButton and event.pressed:
+		if typing_number():
+			get_viewport().gui_get_focus_owner().release_focus()
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			pending_cube_pick = event.position
 
 
 func _physics_process(delta: float) -> void:
+	if pending_cube_pick.is_finite():
+		pick_cube(pending_cube_pick)
+		pending_cube_pick = Vector2.INF
 	var use_keyboard := not typing_number()
 	var left := use_keyboard and (Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT))
 	var right := use_keyboard and (Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))
@@ -144,6 +153,21 @@ func _physics_process(delta: float) -> void:
 	jump_pressed = false
 	if absf(player.position.x) > 82.0 or player.position.y < -6.0 or cube.position.y < -6.0:
 		reset_sandbox()
+
+
+func pick_cube(cursor: Vector2) -> void:
+	var origin := camera.project_ray_origin(cursor)
+	var end := origin + camera.project_ray_normal(cursor) * 40.0
+	var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(origin, end, 3))
+	if not hit.is_empty() and hit.collider == cube:
+		cube_controls.open_at(cursor, cube.tuning())
+	else:
+		cube_controls.hide()
+
+
+func adjust_cube(key: StringName, value: float) -> void:
+	cube.adjust_property(key, value)
+	recorder.log_event("cube_tuning", {"changed": key, "properties": cube.tuning()})
 
 
 func reset_sandbox() -> void:
@@ -217,10 +241,12 @@ func add_controls() -> void:
 	var interface := CanvasLayer.new()
 	add_child(interface)
 	var panel := VBoxContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.position = Vector2(20, 18)
 	panel.add_theme_constant_override("separation", 8)
 	interface.add_child(panel)
 	var buttons := HBoxContainer.new()
+	buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(buttons)
 	add_button(buttons, "Back to proportions", Callable(self, "return_to_viewer"))
 	add_button(buttons, "Reset positions", reset_sandbox)
@@ -239,13 +265,23 @@ func add_controls() -> void:
 		add_adjustment(panel, key)
 	panel.add_child(tuning_status)
 	panel.add_child(motion_status)
+	var capture_panel := VBoxContainer.new()
+	capture_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	capture_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	interface.add_child(capture_panel)
 	var capture_buttons := HBoxContainer.new()
-	panel.add_child(capture_buttons)
+	capture_buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	capture_buttons.alignment = BoxContainer.ALIGNMENT_END
+	capture_panel.add_child(capture_buttons)
 	record_button = add_button(capture_buttons, "Record", start_recording)
 	stop_record_button = add_button(capture_buttons, "Stop recording", recorder.stop)
 	stop_record_button.disabled = true
-	capture_buttons.add_child(capture_status)
+	capture_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	capture_panel.add_child(capture_status)
+	capture_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 20)
 	recorder.status_changed.connect(update_recording_status)
+	interface.add_child(cube_controls)
+	cube_controls.property_changed.connect(adjust_cube)
 
 
 func start_recording() -> void:
@@ -262,6 +298,7 @@ func start_recording() -> void:
 		"movement": player.settings.values,
 		"proportions": JSON.parse_string(proportions),
 		"cube_mass": cube.mass,
+		"cube_properties": cube.tuning(),
 	})
 
 
@@ -329,6 +366,7 @@ func add_button(row: HBoxContainer, caption: String, action: Callable) -> Button
 
 func add_adjustment(panel: VBoxContainer, key: StringName) -> void:
 	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(row)
 	var label := Label.new()
 	label.custom_minimum_size.x = 152

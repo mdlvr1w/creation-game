@@ -25,6 +25,8 @@ The orange physics cube starts to the left. Walk into it to nudge it, or hold **
 
 The viewer starts from the project preset in `game/default_proportions.json`. A local saved preset takes precedence. Movement uses the displayed proportions and blends the limbs according to horizontal speed and whether the character is on the ground.
 
+Click the orange cube to open its controls. Weight (mass), bounciness, and surface friction update live. **Reset positions** keeps your cube settings for the current preview. Recording includes the starting properties and any adjustments.
+
 ## Compare the dynamic controller
 
 Choose **Try dynamic movement** from the figurine viewer. It uses the same sandbox, proportions, and controls as **Try movement**. The dynamic preview starts from reference movement tuning unless there is an experimental preset. Saving from the dynamic preview writes `user://mannequin-movement-dynamic.json`, so you can compare presets without overwriting the reference.

@@ -17,12 +17,30 @@ func run() -> void:
 	var folder := ProjectSettings.globalize_path(path)
 
 	check(recorder.start({"test": "first"}, path), "start the first recording")
-	await create_timer(0.55).timeout
+	await create_timer(0.15).timeout
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	click.position = preview.camera.unproject_position(preview.cube.global_position)
+	root.push_input(click, true)
+	await physics_frame
+	await process_frame
+	check(preview.cube_controls.visible, "clicking the cube opens its context panel")
+	preview.cube_controls.fields[&"mass"].value = 8.5
+	preview.cube_controls.fields[&"bounce"].value = 0.65
+	preview.cube_controls.fields[&"friction"].value = 0.12
+	var properties: Dictionary = preview.cube.tuning()
+	check(is_equal_approx(properties.mass, 8.5) and is_equal_approx(properties.bounce, 0.65)
+		and is_equal_approx(properties.friction, 0.12), "cube fields update live physics properties")
+	preview.reset_sandbox()
+	check(is_equal_approx(preview.cube.mass, 8.5), "reset preserves cube tuning within the preview")
 	check(preview.record_button.disabled and not preview.stop_record_button.disabled, "recording controls reflect active capture")
 	recorder.stop()
 	var trace := FileAccess.get_file_as_string(folder.path_join("trace.jsonl"))
 	check(trace.contains('"first"') and trace.contains('"kind":"physics"') and trace.contains('"kind":"stop"'),
 		"the first trace contains start, physics, and stop")
+	check(trace.contains('"kind":"cube_tuning"') and trace.contains('"mass":8.5'),
+		"recording includes live cube tuning")
 
 	var legacy_frame := FileAccess.open(folder.path_join("frame_000000.jpg"), FileAccess.WRITE)
 	legacy_frame.close()

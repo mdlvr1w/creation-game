@@ -39,3 +39,19 @@ func reset() -> void:
 	angular_velocity = Vector3.ZERO
 	sleeping = false
 	reset_physics_interpolation()
+
+
+func tuning() -> Dictionary:
+	return {
+		"mass": mass,
+		"bounce": physics_material_override.bounce,
+		"friction": physics_material_override.friction,
+	}
+
+
+func adjust_property(key: StringName, value: float) -> void:
+	match key:
+		&"mass": mass = value
+		&"bounce": physics_material_override.bounce = value
+		&"friction": physics_material_override.friction = value
+	sleeping = false

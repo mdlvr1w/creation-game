@@ -258,3 +258,9 @@ The current character controller remains the gameplay reference, with its own sa
 Foot support records a body and contact velocity. Traction is weaker on a movable support. Jumping against a movable support applies an opposing impulse at the foot contact, so the figurine and its held cube cannot repeatedly launch their combined mass upward using their own contacts. The regression tests cover 17 jump attempts, an off-center nudge, supported transport, and the difference between light and heavy cubes.
 
 This is an experiment with built-in rigid-body physics and a bounded impulse grip. A custom movement constraint inside the solver remains a separate option. The regression suite passed with the default Godot Physics backend and with Jolt selected in a scratch project. The shipped backend stays the same for both previews. Hands-on comparison will determine whether the dynamic controller gives us a better foundation.
+
+### Cube settings for playtesting
+
+The first dynamic-controller playtest trace contains nine repeated top-grab jumps between 27.02 and 29.85 seconds. The figurine returned to the cube between hops and the pair did not climb upward.
+
+Clicking the cube now opens live controls for mass, bounce, and surface friction in either preview. Position resets keep the settings for the current session. The trace stores the cube's starting properties and each edit for comparing test runs.
