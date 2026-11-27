@@ -24,6 +24,7 @@ printf '%s\n' "$revision" > game/build_revision.txt
 "$godot_binary" --headless --script res://tests/grab_test.gd
 "$godot_binary" --headless --script res://tests/recording_test.gd
 "$godot_binary" --headless --fixed-fps 60 --script res://tests/dynamic_movement_test.gd
+"$godot_binary" --headless --fixed-fps 60 --script res://tests/hanging_test.gd
 mkdir -p dist/linux dist/windows
 cp notices/GODOT-*.txt dist/linux/
 cp notices/GODOT-*.txt dist/windows/

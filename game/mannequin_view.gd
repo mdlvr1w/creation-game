@@ -85,6 +85,15 @@ func add_controls() -> void:
 	dynamic.pressed.connect(open_movement.bind(true))
 	toolbar.add_child(dynamic)
 
+	var hanging := Button.new()
+	hanging.text = "Try hanging"
+	hanging.custom_minimum_size.y = 32
+	hanging.pressed.connect(func():
+		get_tree().set_meta("preview_proportions", figurine.encode_proportions())
+		get_tree().change_scene_to_file("res://game/hanging_preview.tscn")
+	)
+	toolbar.add_child(hanging)
+
 	status.position = Vector2(20, 58)
 	status.text = "Click a part of the mannequin to adjust its proportions."
 	status.add_theme_color_override("font_shadow_color", Color("#20292e"))

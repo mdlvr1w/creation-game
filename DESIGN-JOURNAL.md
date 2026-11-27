@@ -264,3 +264,9 @@ This is an experiment with built-in rigid-body physics and a bounded impulse gri
 The first dynamic-controller playtest trace contains nine repeated top-grab jumps between 27.02 and 29.85 seconds. The figurine returned to the cube between hops and the pair did not climb upward.
 
 Clicking the cube now opens live controls for mass, bounce, and surface friction in either preview. Position resets keep the settings for the current session. The trace stores the cube's starting properties and each edit for comparing test runs.
+
+### Isolated hanging comparison
+
+Compare passive and active hanging with the same mannequin, hand marks, and fixed or movable support. The procedural version uses a compliant tether, a bounded drive at hip height, and damped leg motion. The partial rig instead applies limited opposing torques through hips, knees, and shoulders. It uses one planar arm chain for the paired grip and separate physical legs. Both versions use the same continuous leg effort target and use a rising ledge to test the return of support.
+
+The automated comparison verifies leg response to input, momentum after release, motion after an external nudge, feedback to the movable support, and recovering and losing footing while keeping the grip. With a full-input test the movable support traveled sideways about 0.44 units in the procedural test and 0.04 in the articulated test. The articulated version transfers effort through the joint chain and currently produces much less swing. Keep both versions available for playtesting alongside the earlier movement controllers.
