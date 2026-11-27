@@ -42,7 +42,8 @@ func bind_model(visual: Node3D) -> void:
 		lean_axes.append(rest[hip].origin - rest[hip].basis.y * (mesh.height * 0.5 - mesh.radius))
 
 
-func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, max_lean: float, direction: float) -> void:
+func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, max_lean: float,
+		direction: float, intent_speed := 0.0) -> void:
 	var speed := absf(velocity.x)
 	var pace := clampf(speed / max_speed, 0.0, 1.0)
 	stride = move_toward(stride, pace if grounded else 0.0, delta * 5.0)
@@ -52,12 +53,6 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 	if grabbing:
 		reach_cube = grip_cube
 	grip_blend = move_toward(grip_blend, 1.0 if grabbing else 0.0, delta * 7.0)
-	if grounded:
-		var stride_speed := velocity.x * grip_side if grabbing else speed
-		phase = fposmod(phase + stride_speed * delta * 2.2, TAU)
-	if shared_hold and not grounded:
-		stride = move_toward(stride, absf(direction), delta * 6.0)
-		phase = fposmod(phase + direction * delta * 8.0, TAU)
 	if speed > 0.12:
 		facing = signf(velocity.x)
 	var turn_extent := lerpf(0.22, 1.05, maxf(pace, air_pose * 0.65))
@@ -67,21 +62,34 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 	head_look = head_look.lerp(head_look_target, 1.0 - exp(-delta * 12.0))
 	var look_yaw := head_look.y * BODY_LOOK_SHARE
 	var yaw := turn + look_yaw
+	var attachment_side := grip_side
 	if shared_attachment:
-		var carried_turn := signf(travel_speed) * PI * 0.5 * smoothstep(0.2, max_speed, absf(travel_speed))
-		yaw = carried_turn + look_yaw
-		if not grounded:
-			yaw += direction * AIR_STEERING_POSE_SHARE * (1.0 - absf(carried_turn) / (PI * 0.5))
+		var attachment := Vector3.ZERO
+		if shared_hold:
+			var shoulder := (rest_shoulder("Left") + rest_shoulder("Right")) * 0.5
+			attachment = grip_cube.to_global(grip_anchor) - get_parent().to_global(shoulder - Vector3.UP * physical_crouch)
+			attachment_side = signf(attachment.x)
+		yaw = shared_facing_yaw(velocity.x, intent_speed, direction, grounded, max_speed, attachment, look_yaw)
 	elif grabbing:
 		var anchor_offset := grip_cube.to_global(grip_anchor) - global_position
 		var lateral_weight := smoothstep(0.25, 0.55, absf(anchor_offset.x))
 		yaw = lerp_angle(grip_start_yaw, signf(anchor_offset.x) * PI * 0.5, lateral_weight)
 	rotation.y = lerp_angle(rotation.y, yaw, 1.0 - exp(-delta * 17.0))
 
+	if grounded:
+		var stride_speed := speed
+		if grabbing:
+			# Project the travel onto the visual forward axis, including when it faces against travel.
+			stride_speed = velocity.x * sin(rotation.y) if shared_hold else velocity.x * grip_side
+		phase = fposmod(phase + stride_speed * delta * 2.2, TAU)
+	if shared_hold and not grounded:
+		stride = move_toward(stride, absf(direction), delta * 6.0)
+		phase = fposmod(phase + direction * delta * 8.0, TAU)
+
 	var target_lean := deg_to_rad(max_lean) * pow(pace, 0.72) if grounded else 0.0
 	if grabbing and grounded:
 		# Input contributes effort even before a heavy object starts to move.
-		var effort := direction * grip_side
+		var effort := direction * attachment_side
 		var load := 0.82 * absf(effort) + 0.18 * pace
 		target_lean = deg_to_rad(max_lean) * load * signf(effort)
 	lean = lerpf(lean, target_lean, 1.0 - exp(-delta * 10.0))
@@ -123,6 +131,26 @@ func animate(delta: float, velocity: Vector3, grounded: bool, max_speed: float, 
 			reach_for_cube(side, body_lean)
 
 
+func shared_facing_yaw(relative_speed: float, intent_speed: float, direction: float, grounded: bool,
+		max_speed: float, attachment: Vector3, look_yaw: float) -> float:
+	var half_turn := PI * 0.5
+	var travel_weight := smoothstep(0.2, max_speed, absf(travel_speed))
+	var steering := direction * AIR_STEERING_POSE_SHARE
+	var travel_yaw := lerpf(steering, signf(travel_speed) * half_turn, travel_weight)
+
+	# Supported motion within the requested speed keeps its facing through reversals.
+	# Platform travel and motion beyond that speed still turn the body.
+	var drive_speed := absf(intent_speed)
+	var driven_speed := clampf(relative_speed, -drive_speed, drive_speed) if grounded else 0.0
+	var carried_weight := smoothstep(0.2, max_speed, absf(travel_speed - driven_speed))
+	var attachment_width := smoothstep(0.08, 0.30, absf(attachment.x))
+	var lateral_fraction := absf(attachment.x) / maxf(attachment.length(), 0.001)
+	var alignment := attachment_width * smoothstep(0.15, 0.65, lateral_fraction)
+	var footing_weight := 1.0 if grounded else 0.20
+	var grip_weight := alignment * footing_weight * (1.0 - carried_weight)
+	return lerpf(travel_yaw + look_yaw, signf(attachment.x) * half_turn, grip_weight)
+
+
 func supported_reach_pose(delta: float, grounded: bool, hip_center: Vector3) -> Transform3D:
 	var supported_reach := 0.0
 	if grounded and not shared_attachment and grip_blend > 0.0 and is_instance_valid(reach_cube):
@@ -160,9 +188,7 @@ func required_arm_drop(side: String, body_pose: Transform3D) -> float:
 func hand_contact(shoulder_x: float, radius: float) -> Vector3:
 	var contact_local := grip_anchor + grip_normal * radius
 	if shared_attachment:
-		var tangent := reach_cube.global_basis.inverse() * model.global_basis.x.normalized()
-		tangent -= grip_normal * tangent.dot(grip_normal)
-		contact_local += tangent.normalized() * clampf(shoulder_x, -0.08, 0.08)
+		contact_local += grip_lateral * clampf(shoulder_x, -0.08, 0.08)
 	else:
 		contact_local += grip_lateral * clampf(shoulder_x, -0.33, 0.33)
 	return reach_cube.to_global(contact_local)

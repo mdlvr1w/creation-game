@@ -97,7 +97,8 @@ func step(delta: float, move_intent: float, jump_down: bool, jump_pressed := fal
 	var visual_velocity := linear_velocity
 	if is_on_floor():
 		visual_velocity.x -= support_velocity.x
-	motion.animate(delta, visual_velocity, is_on_floor(), settings.values.max_speed, settings.values.lean_degrees, direction)
+	motion.animate(delta, visual_velocity, is_on_floor(), settings.values.max_speed, settings.values.lean_degrees,
+		direction, target_speed())
 
 
 func update_physical_crouch(delta: float) -> void:
@@ -187,9 +188,13 @@ func read_support(state: PhysicsDirectBodyState3D) -> void:
 		support_relative_y = state.linear_velocity.y - support_velocity.y
 
 
+func target_speed() -> float:
+	return signf(direction) * lerpf(settings.values.min_speed, settings.values.max_speed, absf(direction))
+
+
 func apply_drive(state: PhysicsDirectBodyState3D) -> void:
 	var tuning := settings.values
-	last_drive_speed = signf(direction) * lerpf(tuning.min_speed, tuning.max_speed, absf(direction))
+	last_drive_speed = target_speed()
 	if not is_on_floor() and (held_cube != null or (grip_launch and is_zero_approx(direction))):
 		last_drive_impulse = Vector3.ZERO
 		return
@@ -331,11 +336,9 @@ func update_grip_candidates(candidates: Array[RigidBody3D], held: bool) -> void:
 	grip_normal = held_cube.global_basis.inverse() * best.normal
 	grip_clearance = (motion.hand_radius("Left") + motion.hand_radius("Right")) * 0.5
 	motion.grip_normal = grip_normal
-	motion.grip_side = signf(best.position.x - global_position.x)
-	if is_zero_approx(motion.grip_side):
-		motion.grip_side = motion.facing
-	motion.grip_start_yaw = motion.rotation.y
-	motion.grip_lateral = Vector3.FORWARD
+	# Keep the visual contact offsets fixed in surface space while the body turns.
+	var lateral := held_cube.global_basis.inverse() * Vector3.BACK
+	motion.grip_lateral = (lateral - grip_normal * lateral.dot(grip_normal)).normalized()
 	angular_damp = 1.4
 
 

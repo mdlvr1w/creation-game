@@ -74,6 +74,7 @@ func run() -> void:
 	check(player.position.x < start_x - 0.12, "a moving cube can still carry the figurine")
 	await check_quiet_acquisition()
 	await check_close_cube_release()
+	await check_grab_facing()
 	await check_off_center_ride()
 	await check_gentle_wheel_catch()
 	await check_slow_wheel_footing()
@@ -117,6 +118,33 @@ func check_close_cube_release() -> void:
 	await frames(6, -1.0)
 	check(player.held_cube == null and absf(player.position.y - before_release) < 0.08
 		and player.is_on_floor(), "releasing during a close push keeps the body on the ground")
+
+
+func check_grab_facing() -> void:
+	var player = preview.player
+	var cube = preview.cube
+	for side in [-1.0, 1.0]:
+		preview.reset_sandbox()
+		cube.position.x = side * 1.23
+		await frames(24)
+		await frames(20, 0.0, false, true)
+		var anchor: Vector3 = player.grip_anchor
+		await frames(24, side, false, true)
+		check(player.velocity.x * side > 0.7 and player.motion.rotation.y * side > 1.4,
+			"pushing moves toward the cube while facing it")
+		await frames(26, -side, false, true)
+		var phase: float = player.motion.phase
+		await frames(1, -side, false, true)
+		check(player.velocity.x * side < -0.7 and player.motion.rotation.y * side > 1.4
+			and angle_difference(phase, player.motion.phase) < 0.0,
+			"pulling faces the cube and walks backward")
+		var least_facing := PI * 0.5
+		for frame in 8:
+			await frames(1, side, false, true)
+			least_facing = minf(least_facing, player.motion.rotation.y * side)
+		check(least_facing > 1.4, "reversing a pull into a push keeps facing the cube")
+		check(player.held_cube == cube and player.grip_anchor == anchor and player.motion.hand_error() < 0.08,
+			"turning and reversing keep the same grip and visible hand contacts")
 
 
 func check_off_center_ride() -> void:
@@ -232,6 +260,9 @@ func check_rotating_wheel() -> void:
 	var anchor: Vector3 = player.grip_anchor
 	var slow_roll := 0.0
 	var fast_roll := 0.0
+	var slow_yaw := 0.0
+	var fast_yaw := 0.0
+	var steady_slow_frames := 0
 	var body_top := 0.0
 	var lateral_span := Vector2.ZERO
 	var hand_error := 0.0
@@ -241,6 +272,15 @@ func check_rotating_wheel() -> void:
 		await wheel_frame(frame < 26)
 		if frame > 6 and player.held_cube == wheel:
 			hand_error = maxf(hand_error, player.motion.hand_error())
+		var lateral_speed: float = player.velocity.x
+		if frame < 550 and not player.is_on_floor() and absf(lateral_speed) < 1.2:
+			steady_slow_frames += 1
+			if steady_slow_frames > 8:
+				slow_yaw = maxf(slow_yaw, absf(player.motion.rotation.y))
+		else:
+			steady_slow_frames = 0
+		if frame > 570 and not player.is_on_floor() and absf(lateral_speed) > 2.4:
+			fast_yaw = maxf(fast_yaw, player.motion.rotation.y * signf(lateral_speed))
 		if frame < 550:
 			slow_roll = maxf(slow_roll, absf(player.rotation.z))
 			body_top = maxf(body_top, player.position.y)
@@ -255,6 +295,8 @@ func check_rotating_wheel() -> void:
 		"the wheel and the held point are centered on the movement plane")
 	check(body_top > wheel.position.y - 0.65 and lateral_span.x < -0.5 and lateral_span.y > 0.5,
 		"the body rises and is carried around both sides of the axle")
+	check(slow_yaw > 0.0 and slow_yaw < 0.65 and fast_yaw > 1.0,
+		"without input the body turns farther with faster lateral carry")
 	check(slow_roll > 0.04 and fast_roll > 0.12, "the body visibly responds at both wheel speeds")
 	check(hand_error < 0.08, "the visible forearm stays at the rim")
 
